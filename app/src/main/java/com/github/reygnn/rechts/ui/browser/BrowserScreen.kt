@@ -7,7 +7,11 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.ViewGroup
+import android.webkit.GeolocationPermissions
+import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -20,10 +24,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -52,6 +62,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
@@ -65,9 +76,11 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -81,6 +94,8 @@ import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.WebViewConfig
 
+private const val TAG = "BrowserScreen"
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -90,6 +105,7 @@ fun BrowserScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
+    val layoutDirection = LocalLayoutDirection.current
 
     // Chosen browsing mode, seeded from the persisted preference and remembered
     // across configuration changes. Toggling it persists the choice and (via
@@ -97,9 +113,24 @@ fun BrowserScreen(
     val settings = remember { SettingsStore(context) }
     var isPrivate by rememberSaveable { mutableStateOf(settings.privateMode) }
 
-    // One WebView per mode: switching modes recreates it bound to the other
-    // profile (normal = persistent default, private = isolated, session-only).
-    val webView = remember(isPrivate) { createBrowserWebView(context, viewModel, isPrivate) }
+    // Bumped when the render process dies (see onRenderProcessGone); keying the
+    // WebView on it forces a fresh instance instead of letting the platform kill
+    // the whole app process. Not saveable — a renderer crash isn't a state to
+    // restore across process death.
+    var webViewEpoch by remember { mutableIntStateOf(0) }
+
+    // URL to reopen after a renderer-crash rebuild (captured before the bump).
+    var reloadAfterCrash by remember { mutableStateOf<String?>(null) }
+
+    // One WebView per mode (and per renderer-crash epoch): switching modes
+    // recreates it bound to the other profile (normal = persistent default,
+    // private = isolated, session-only).
+    val webView = remember(isPrivate, webViewEpoch) {
+        createBrowserWebView(context, viewModel, isPrivate) {
+            reloadAfterCrash = viewModel.uiState.value.currentUrl.ifBlank { null }
+            webViewEpoch++
+        }
+    }
 
     // Serialized back/forward history, persisted ONLY across process death.
     // android:configChanges keeps the live WebView across rotation, so the
@@ -108,7 +139,10 @@ fun BrowserScreen(
     val savedHistory by rememberSaveable(
         stateSaver = object : Saver<Bundle?, Bundle> {
             override fun SaverScope.save(value: Bundle?): Bundle =
-                Bundle().also { webView.saveState(it) }
+                // Never persist a private session: writing its URLs into the
+                // on-disk instance state would let private browsing outlive the
+                // app process. Normal browsing snapshots its history as usual.
+                Bundle().also { if (!isPrivate) webView.saveState(it) }
 
             override fun restore(value: Bundle): Bundle? = value
         },
@@ -126,11 +160,30 @@ fun BrowserScreen(
     var pendingInitialUrl by rememberSaveable { mutableStateOf(initialUrl) }
     LaunchedEffect(webView) {
         if (webView.url == null) {
+            val crashReload = reloadAfterCrash
+            reloadAfterCrash = null
             val inbound = pendingInitialUrl
             pendingInitialUrl = null
             when {
-                inbound != null -> webView.loadUrl(inbound)
-                firstComposition && savedHistory != null &&
+                // Renderer was rebuilt after a crash: reopen the page we were on.
+                crashReload != null -> webView.loadUrl(crashReload)
+
+                // Inbound link from another app. Route it through the same scheme
+                // gate as every other load — only http(s)/about go into the
+                // WebView; anything else (an explicit intent could carry data:,
+                // javascript:, …) is handed off to another app, not loaded here.
+                inbound != null ->
+                    if (ExternalScheme.isInternal(inbound)) {
+                        webView.loadUrl(inbound)
+                    } else {
+                        ExternalScheme.dispatch(context, inbound)
+                        webView.loadUrl(UrlNormalizer.HOME_URL)
+                    }
+
+                // Process-death restore — normal mode only. A private session is
+                // never reconstructed from disk-persisted state (the saver above
+                // also refuses to write it).
+                firstComposition && !isPrivate && savedHistory != null &&
                     webView.restoreState(savedHistory!!) != null ->
                     // History restored: mirror the back/forward list into the
                     // chrome now, before the restored page's first callback.
@@ -226,11 +279,16 @@ fun BrowserScreen(
             key(webView) {
                 AndroidView(
                     factory = { webView },
-                    // Only the bottom (navigation-bar) inset belongs here; the
-                    // chrome already consumes the top inset via statusBarsPadding().
+                    // Bottom (navigation-bar) and side insets belong here; the
+                    // chrome already consumes the top + side insets itself. The
+                    // sides matter in landscape (gesture nav / display cutout).
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(bottom = contentPadding.calculateBottomPadding()),
+                        .padding(
+                            start = contentPadding.calculateStartPadding(layoutDirection),
+                            end = contentPadding.calculateEndPadding(layoutDirection),
+                            bottom = contentPadding.calculateBottomPadding(),
+                        ),
                 )
             }
         }
@@ -241,6 +299,7 @@ private fun createBrowserWebView(
     context: Context,
     viewModel: BrowserViewModel,
     privateMode: Boolean,
+    onRenderGone: () -> Unit,
 ): WebView = WebView(context).apply {
     layoutParams = ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -267,11 +326,39 @@ private fun createBrowserWebView(
         override fun onPageFinished(view: WebView, url: String) {
             viewModel.onPageFinished(url, view.canGoBack(), view.canGoForward())
         }
+
+        // The render process died (OOM, or a crash on a heavy/hostile page).
+        // Returning the default would tear down the whole app process; instead
+        // report it so the caller drops this now-defunct WebView and rebuilds a
+        // fresh one (reopening the page we were on).
+        override fun onRenderProcessGone(
+            view: WebView,
+            detail: RenderProcessGoneDetail,
+        ): Boolean {
+            Log.w(TAG, "WebView render process gone (didCrash=${detail.didCrash()})")
+            onRenderGone()
+            return true
+        }
     }
 
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             viewModel.onProgressChanged(newProgress)
+        }
+
+        // rechts requests no device capabilities for web content. Deny
+        // geolocation and camera/mic/etc. deterministically — the platform
+        // default leaves the JS request unanswered (it hangs) rather than
+        // cleanly rejecting it.
+        override fun onGeolocationPermissionsShowPrompt(
+            origin: String,
+            callback: GeolocationPermissions.Callback,
+        ) {
+            callback.invoke(origin, false, false)
+        }
+
+        override fun onPermissionRequest(request: PermissionRequest) {
+            request.deny()
         }
 
         // File upload is out of scope (CLAUDE.md). The default would silently
@@ -313,7 +400,15 @@ private fun BrowserChrome(
     onAddressSubmit: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.statusBarsPadding()) {
+        // Top inset for the status bar plus the side insets (landscape gesture
+        // nav / display cutout); the Surface background still spans edge-to-edge.
+        Column(
+            Modifier.windowInsetsPadding(
+                WindowInsets.systemBars.only(
+                    WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                ),
+            ),
+        ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -433,8 +528,13 @@ private fun AddressField(
                 }
             }
         },
+        // Plain text keyboard, not KeyboardType.Uri: the bar doubles as a search
+        // box, and many IMEs drop the space bar in URI mode. Auto-capitalization
+        // and autocorrect are off so typed URLs aren't mangled.
         keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Uri,
+            keyboardType = KeyboardType.Text,
+            capitalization = KeyboardCapitalization.None,
+            autoCorrectEnabled = false,
             imeAction = ImeAction.Go,
         ),
         keyboardActions = KeyboardActions(onGo = { onSubmit() }),

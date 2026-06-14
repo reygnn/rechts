@@ -96,10 +96,14 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    **Private mode is optional and profile-isolated:** normal browsing uses the
    default `ProfileStore` profile (persistent — saved logins live here, never
    wipe it); private browsing uses the separate `WebViewConfig.PRIVATE_PROFILE`,
-   wiped on a cold launch (`MainActivity.onCreate` → `clearPrivateData()`,
-   guarded by `savedInstanceState == null` so rotation keeps the session).
+   wiped in `MainActivity.onCreate` (`clearPrivateData()`). It runs
+   unconditionally: rotation no longer reaches `onCreate` (`configChanges`), so
+   the only calls are a genuine cold launch and an OS process-death restore —
+   in both the private session must start fresh (see hard rule 5: private
+   history is never persisted/restored either). The normal profile is untouched.
    Switching mode rebuilds the WebView on the other profile — that's why the
-   WebView is `remember(isPrivate)` and the `AndroidView` sits in `key(webView)`.
+   WebView is `remember(isPrivate, webViewEpoch)` and the `AndroidView` sits in
+   `key(webView)`.
    The chosen mode persists via `SettingsStore` (SharedPreferences).
 4. **DuckDuckGo is the default** (privacy-friendly), but homepage and search
    are deliberately two endpoints: `UrlNormalizer.HOME_URL` =
@@ -118,7 +122,12 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    `WebView.saveState`/`restoreState`: `BrowserScreen` snapshots the history
    into a `rememberSaveable` `Bundle` and restores it on the first composition
    only — a mode switch (which also rebuilds the WebView) deliberately does
-   *not* restore, so profiles don't bleed into each other.
+   *not* restore, so profiles don't bleed into each other. **A private session
+   is never persisted**: the saver skips `saveState` while `isPrivate`, and the
+   restore branch is gated on `!isPrivate`, so private URLs never reach the
+   on-disk instance state and a private session never survives process death.
+   A render-process crash (`onRenderProcessGone`) rebuilds the WebView via a
+   `webViewEpoch` key instead of letting the platform kill the app process.
 6. **Non-WebView schemes go to other apps:** the WebView only loads
    `http`/`https`/`about`. `web/ExternalScheme` intercepts everything else
    (`mailto:`, `tel:`, `intent:`, app deep links) — both in-page link taps
@@ -132,8 +141,10 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    `singleTask`; inbound links arrive via `onCreate` (cold) and `onNewIntent`
    (running) and are routed to the WebView (`viewIntentUrl` →
    `BrowserViewModel.openExternalUrl`, which loads the URL *without*
-   normalization). The in-app "set as default" action uses
-   `RoleManager.ROLE_BROWSER`.
+   normalization). Both paths still pass through the `ExternalScheme.isInternal`
+   gate before loading, so an explicit intent carrying a non-`http(s)` scheme
+   (`data:`, `javascript:`, …) is handed off to another app, never loaded in the
+   WebView. The in-app "set as default" action uses `RoleManager.ROLE_BROWSER`.
 
 ---
 

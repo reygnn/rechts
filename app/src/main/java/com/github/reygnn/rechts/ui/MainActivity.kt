@@ -18,13 +18,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // On a genuine cold launch, drop any leftover private-browsing data so a
-        // private session never outlives the app. The normal/default profile —
-        // and therefore saved logins — is untouched. With android:configChanges
-        // set, rotation no longer calls onCreate at all.
-        if (savedInstanceState == null) {
-            WebViewConfig.clearPrivateData()
-        }
+        // Drop any leftover private-browsing data so a private session never
+        // outlives the app process. With android:configChanges set, rotation no
+        // longer reaches onCreate at all, so this runs only on a genuine cold
+        // launch or an OS process-death restore — in both, the private session
+        // must start fresh (and BrowserScreen also refuses to restore private
+        // history from disk). The normal/default profile — and therefore saved
+        // logins — is untouched.
+        WebViewConfig.clearPrivateData()
         enableEdgeToEdge()
         setContent {
             RechtsTheme {
