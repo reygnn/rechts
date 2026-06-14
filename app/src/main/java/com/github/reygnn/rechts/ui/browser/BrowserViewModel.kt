@@ -57,6 +57,15 @@ class BrowserViewModel : ViewModel() {
         _loadRequests.trySend(target)
     }
 
+    /**
+     * Request a load of an already-formed URL coming from outside (an inbound
+     * ACTION_VIEW intent — e.g. a link tapped in another app). No normalization:
+     * the URL is taken as-is.
+     */
+    fun openExternalUrl(url: String) {
+        _loadRequests.trySend(url)
+    }
+
     // ── WebView callbacks ─────────────────────────────────────────────────
 
     fun onPageStarted(url: String, canGoBack: Boolean, canGoForward: Boolean) {

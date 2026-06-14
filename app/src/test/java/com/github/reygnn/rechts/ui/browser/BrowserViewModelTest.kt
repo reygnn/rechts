@@ -64,6 +64,17 @@ class BrowserViewModelTest {
     }
 
     @Test
+    fun `openExternalUrl emits the url verbatim, without normalization`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.loadRequests.test {
+                vm.openExternalUrl("https://example.com/from-other-app")
+                assertEquals("https://example.com/from-other-app", awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `onAddressSubmit with blank input emits nothing`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.loadRequests.test {

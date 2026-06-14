@@ -1,12 +1,19 @@
 package com.github.reygnn.rechts.ui.browser
 
+import android.app.role.RoleManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,14 +25,17 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -65,6 +75,7 @@ import com.github.reygnn.rechts.web.WebViewConfig
 fun BrowserScreen(
     viewModel: BrowserViewModel,
     modifier: Modifier = Modifier,
+    initialUrl: String? = null,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -80,9 +91,15 @@ fun BrowserScreen(
     // profile (normal = persistent default, private = isolated, session-only).
     val webView = remember(isPrivate) { createBrowserWebView(context, viewModel, isPrivate) }
 
-    // Load the homepage whenever a fresh WebView appears (launch or mode switch).
+    // First load: an inbound link if we were launched from one, else the
+    // homepage. Consumed once so later WebViews (mode switch) open the homepage.
+    var pendingInitialUrl by rememberSaveable { mutableStateOf(initialUrl) }
     LaunchedEffect(webView) {
-        if (webView.url == null) webView.loadUrl(UrlNormalizer.HOME_URL)
+        if (webView.url == null) {
+            val target = pendingInitialUrl ?: UrlNormalizer.HOME_URL
+            pendingInitialUrl = null
+            webView.loadUrl(target)
+        }
     }
 
     // Forward load requests coming out of the ViewModel to the current WebView.
@@ -96,6 +113,24 @@ fun BrowserScreen(
     // Destroy the WebView when it's replaced (mode switch) or the screen leaves.
     DisposableEffect(webView) {
         onDispose { webView.destroy() }
+    }
+
+    val roleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { /* result not needed — the system applies the choice */ }
+
+    val onSetDefaultBrowser: () -> Unit = {
+        val roleManager = context.getSystemService(RoleManager::class.java)
+        when {
+            roleManager == null || !roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) ->
+                context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+
+            roleManager.isRoleHeld(RoleManager.ROLE_BROWSER) ->
+                Toast.makeText(context, R.string.already_default, Toast.LENGTH_SHORT).show()
+
+            else ->
+                roleLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
+        }
     }
 
     Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->
@@ -113,6 +148,7 @@ fun BrowserScreen(
                     isPrivate = next
                     settings.privateMode = next
                 },
+                onSetDefaultBrowser = onSetDefaultBrowser,
                 onAddressChange = viewModel::onAddressChange,
                 onAddressClear = viewModel::onAddressClear,
                 onAddressFocusChanged = viewModel::onAddressFocusChanged,
@@ -174,6 +210,7 @@ private fun BrowserChrome(
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
     onTogglePrivate: () -> Unit,
+    onSetDefaultBrowser: () -> Unit,
     onAddressChange: (String) -> Unit,
     onAddressClear: () -> Unit,
     onAddressFocusChanged: (Boolean) -> Unit,
@@ -195,6 +232,7 @@ private fun BrowserChrome(
                 }
                 AddressField(
                     value = state.addressText,
+                    isPrivate = isPrivate,
                     onValueChange = onAddressChange,
                     onClear = onAddressClear,
                     onFocusChanged = onAddressFocusChanged,
@@ -208,24 +246,11 @@ private fun BrowserChrome(
                         Icon(Icons.Filled.Refresh, stringResource(R.string.nav_reload))
                     }
                 }
-                // Private-mode toggle: highlighted (primary) when active.
-                IconButton(
-                    onClick = onTogglePrivate,
-                    colors = if (isPrivate) {
-                        IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                        )
-                    } else {
-                        IconButtonDefaults.iconButtonColors()
-                    },
-                ) {
-                    Icon(
-                        Icons.Filled.Lock,
-                        contentDescription = stringResource(
-                            if (isPrivate) R.string.private_disable else R.string.private_enable,
-                        ),
-                    )
-                }
+                OverflowMenu(
+                    isPrivate = isPrivate,
+                    onTogglePrivate = onTogglePrivate,
+                    onSetDefaultBrowser = onSetDefaultBrowser,
+                )
             }
 
             // Determinate progress bar. Always laid out (only faded out when
@@ -244,8 +269,43 @@ private fun BrowserChrome(
 }
 
 @Composable
+private fun OverflowMenu(
+    isPrivate: Boolean,
+    onTogglePrivate: () -> Unit,
+    onSetDefaultBrowser: () -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(Icons.Filled.MoreVert, stringResource(R.string.menu_more))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.menu_private_mode)) },
+                onClick = {
+                    expanded = false
+                    onTogglePrivate()
+                },
+                leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                trailingIcon = {
+                    if (isPrivate) Icon(Icons.Filled.Check, contentDescription = null)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.menu_set_default)) },
+                onClick = {
+                    expanded = false
+                    onSetDefaultBrowser()
+                },
+            )
+        }
+    }
+}
+
+@Composable
 private fun AddressField(
     value: String,
+    isPrivate: Boolean,
     onValueChange: (String) -> Unit,
     onClear: () -> Unit,
     onFocusChanged: (Boolean) -> Unit,
@@ -258,7 +318,18 @@ private fun AddressField(
         modifier = modifier.onFocusChanged { onFocusChanged(it.isFocused) },
         singleLine = true,
         placeholder = { Text(stringResource(R.string.address_hint)) },
-        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        leadingIcon = {
+            // The leading icon doubles as the private-mode indicator.
+            if (isPrivate) {
+                Icon(
+                    Icons.Filled.Lock,
+                    contentDescription = stringResource(R.string.private_active),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                Icon(Icons.Filled.Search, contentDescription = null)
+            }
+        },
         trailingIcon = {
             if (value.isNotEmpty()) {
                 IconButton(onClick = onClear) {

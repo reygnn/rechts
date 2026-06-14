@@ -11,7 +11,12 @@
     <string name="nav_reload">Neu laden</string>
     <string name="nav_stop">Laden stoppen</string>
 
-    <!-- Private mode toggle -->
-    <string name="private_enable">Privaten Modus einschalten</string>
-    <string name="private_disable">Privaten Modus ausschalten</string>
+    <!-- Overflow menu -->
+    <string name="menu_more">Weitere Optionen</string>
+    <string name="menu_private_mode">Privater Modus</string>
+    <string name="menu_set_default">Als Standardbrowser festlegen</string>
+    <string name="already_default">rechts ist bereits dein Standardbrowser</string>
+
+    <!-- Private mode indicator (address bar) -->
+    <string name="private_active">Privater Modus aktiv</string>
 </resources>

@@ -11,7 +11,12 @@
     <string name="nav_reload">Reload</string>
     <string name="nav_stop">Stop loading</string>
 
-    <!-- Private mode toggle -->
-    <string name="private_enable">Turn on private mode</string>
-    <string name="private_disable">Turn off private mode</string>
+    <!-- Overflow menu -->
+    <string name="menu_more">More options</string>
+    <string name="menu_private_mode">Private mode</string>
+    <string name="menu_set_default">Set as default browser</string>
+    <string name="already_default">rechts is already your default browser</string>
+
+    <!-- Private mode indicator (address bar) -->
+    <string name="private_active">Private mode active</string>
 </resources>

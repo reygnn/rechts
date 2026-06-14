@@ -12,9 +12,11 @@ companion is *rechts* — "right".
   which you meant and either loads the page or searches (DuckDuckGo).
 - Back, forward, reload / stop.
 - A slim load-progress bar.
+- Opens `http`/`https` links from other apps — can be set as your default
+  browser (there's an in-app "set as default" entry in the ⋮ menu).
+- Optional private mode (⋮ menu).
 
-That's the whole feature set, on purpose. No tabs, no bookmarks, no history,
-no settings.
+That's the whole feature set, on purpose. No tabs, no bookmarks, no history.
 
 ## Privacy
 

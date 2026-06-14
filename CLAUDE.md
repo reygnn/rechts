@@ -24,7 +24,10 @@ rechts is **one WebView and an address bar**. That's the whole product.
 It does:
 - load a URL or run a web search from a single address bar,
 - back / forward / reload / stop,
-- show load progress.
+- show load progress,
+- open `http`/`https` links from other apps (can be set as the default
+  browser; an overflow menu offers an in-app "set as default" prompt),
+- offer an optional, profile-isolated private mode (overflow menu).
 
 It deliberately does **not** have (each is a new feature category that needs
 explicit user agreement before being built):
@@ -58,10 +61,10 @@ persist.
 ```
 com.github.reygnn.rechts/
   ui/
-    MainActivity.kt              — ComponentActivity, edge-to-edge, hosts BrowserScreen; wipes the private profile on cold start
+    MainActivity.kt              — ComponentActivity (singleTask), edge-to-edge, hosts BrowserScreen; wipes private profile on cold start; routes inbound VIEW intents (onCreate + onNewIntent)
     browser/
-      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); mode toggle; wires WebViewClient/ChromeClient → VM
-      BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests
+      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); overflow menu (private toggle, set-default); wires WebViewClient/ChromeClient → VM
+      BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests (also openExternalUrl for inbound links)
       BrowserUiState.kt          — chrome state (address, progress, history flags)
     theme/                       — RechtsTheme, static teal Color palette
   domain/
@@ -110,6 +113,14 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    orientation lock. Don't drop `configChanges` without restoring WebView
    state some other way (`saveState`/`restoreState`), or rotation will reload
    the homepage again.
+6. **Default-browser eligibility is load-bearing:** the `VIEW` + `BROWSABLE` +
+   `DEFAULT` (`http`/`https`) intent filter on `MainActivity` is what makes
+   rechts selectable as a default browser — don't remove it. The activity is
+   `singleTask`; inbound links arrive via `onCreate` (cold) and `onNewIntent`
+   (running) and are routed to the WebView (`viewIntentUrl` →
+   `BrowserViewModel.openExternalUrl`, which loads the URL *without*
+   normalization). The in-app "set as default" action uses
+   `RoleManager.ROLE_BROWSER`.
 
 ---
 
