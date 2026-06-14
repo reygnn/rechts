@@ -49,6 +49,24 @@ class ExternalSchemeDispatchTest {
     }
 
     @Test
+    fun `intent url is stripped of URI-permission grant flags`() {
+        // A hostile intent: must not smuggle in URI-permission grants; rechts
+        // exposes none of its data to the target app.
+        val url = "intent://evil/#Intent;scheme=foo;" +
+            "launchFlags=0x3;end" // 0x1|0x2 = GRANT_READ|GRANT_WRITE
+        assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+
+        val launched = lastLaunched()!!
+        val grantMask = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+            Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+            Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+        assertEquals("grant flags must be cleared", 0, launched.flags and grantMask)
+        // The hardening must not have dropped NEW_TASK.
+        assertTrue(launched.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test
     fun `web-content view launch requires BROWSABLE`() {
         // A page-initiated launch only matches activities that opted into being
         // triggered from the web.

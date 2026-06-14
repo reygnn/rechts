@@ -190,6 +190,27 @@ class BrowserViewModelTest {
         }
 
     @Test
+    fun `regaining focus clears a stale submit flag so the next blur restores`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+            vm.loadRequests.test {
+                // A submit fires but the expected post-submit blur never arrives
+                // (e.g. focus was already elsewhere), leaving submitInFlight set.
+                vm.onAddressChange("new.example")
+                vm.onAddressSubmit()
+                assertEquals("https://new.example", awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+            // The user later focuses and abandons an edit: the blur must still
+            // restore the page URL, not be swallowed by the stale flag.
+            vm.onAddressFocusChanged(true)
+            vm.onAddressChange("half-typed")
+            vm.onAddressFocusChanged(false)
+            assertEquals("https://example.com", vm.uiState.value.addressText)
+        }
+
+    @Test
     fun `onHistoryRestored mirrors url and history flags`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onHistoryRestored("https://restored.example", canGoBack = true, canGoForward = false)

@@ -35,11 +35,15 @@ object UrlNormalizer {
     private val HIERARCHICAL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.\\-]*://.*")
 
     /**
-     * An opaque-scheme URL without `//` that is safe to navigate to. Code
-     * schemes (`javascript:`, `data:`) are intentionally absent — see the
+     * An opaque-scheme URL without `//` that is handed on verbatim: `about:` is
+     * loaded by the WebView, while `mailto:`/`tel:`/`intent:` are dispatched to
+     * another app by [com.github.reygnn.rechts.web.ExternalScheme]. `intent:` is
+     * listed so the opaque form (`intent:…#Intent;…end`) is treated the same as
+     * the hierarchical `intent://…` form instead of falling through to search.
+     * Code schemes (`javascript:`, `data:`) are intentionally absent — see the
      * class KDoc.
      */
-    private val OPAQUE_SCHEME = Regex("^(about|mailto|tel):.*", RegexOption.IGNORE_CASE)
+    private val OPAQUE_SCHEME = Regex("^(about|mailto|tel|intent):.*", RegexOption.IGNORE_CASE)
 
     /**
      * @return the URL to load, or `null` if [rawInput] is blank (nothing to do).

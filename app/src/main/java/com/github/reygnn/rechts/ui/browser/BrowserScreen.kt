@@ -128,12 +128,26 @@ fun BrowserScreen(
     // URL to reopen after a renderer-crash rebuild (captured before the bump).
     var reloadAfterCrash by remember { mutableStateOf<String?>(null) }
 
+    // Breaks a renderer crash loop: a single crash recovers transparently, but a
+    // page that crashes on every load would otherwise spin a tight rebuild →
+    // crash → rebuild loop. Survives the WebView rebuilds (remember, not keyed).
+    val crashReloadGate = remember { CrashReloadGate() }
+
     // One WebView per mode (and per renderer-crash epoch): switching modes
     // recreates it bound to the other profile (normal = persistent default,
     // private = isolated, session-only).
     val webView = remember(isPrivate, webViewEpoch) {
         createBrowserWebView(context, viewModel, isPrivate) {
-            reloadAfterCrash = viewModel.uiState.value.currentUrl.ifBlank { null }
+            // Reopen the page only while we're not in a crash loop; once the
+            // gate trips, drop the crashing URL and let the first-load effect
+            // fall back to the homepage with a notice.
+            reloadAfterCrash = if (crashReloadGate.shouldReload(SystemClock.uptimeMillis())) {
+                viewModel.uiState.value.currentUrl.ifBlank { null }
+            } else {
+                Log.w(TAG, "Renderer crash loop detected; falling back to homepage")
+                Toast.makeText(context, R.string.page_crash_repeated, Toast.LENGTH_LONG).show()
+                null
+            }
             webViewEpoch++
         }
     }
@@ -212,10 +226,14 @@ fun BrowserScreen(
         viewModel.loadRequests.collect { url ->
             when {
                 ExternalScheme.isInternal(url) -> webView.loadUrl(url)
-                // Typed input is an explicit user action, so no gesture gate; if
-                // no app handles it, honour an intent: fallback page.
-                !ExternalScheme.dispatch(context, url) ->
-                    ExternalScheme.fallbackUrl(url)?.let(webView::loadUrl)
+                // Typed input is an explicit user action, so no gesture gate.
+                ExternalScheme.dispatch(context, url) -> Unit
+                // No app handled it: honour an intent: fallback page if any,
+                // otherwise tell the user instead of failing silently.
+                else -> when (val fallback = ExternalScheme.fallbackUrl(url)) {
+                    null -> Toast.makeText(context, R.string.no_app_to_handle, Toast.LENGTH_SHORT).show()
+                    else -> webView.loadUrl(fallback)
+                }
             }
         }
     }
@@ -241,8 +259,14 @@ fun BrowserScreen(
     }
 
     // Destroy the WebView when it's replaced (mode switch) or the screen leaves.
+    // Detach it from its parent first: destroy() on a still-attached WebView is
+    // the documented gotcha (logs a warning / can leak), so remove it explicitly
+    // rather than relying on the AndroidView teardown order.
     DisposableEffect(webView) {
-        onDispose { webView.destroy() }
+        onDispose {
+            (webView.parent as? ViewGroup)?.removeView(webView)
+            webView.destroy()
+        }
     }
 
     val roleLauncher = rememberLauncherForActivityResult(
@@ -271,7 +295,16 @@ fun BrowserScreen(
                 onBack = { webView.goBack() },
                 onForward = { webView.goForward() },
                 onReloadOrStop = {
-                    if (state.isLoading) webView.stopLoading() else webView.reload()
+                    if (state.isLoading) {
+                        webView.stopLoading()
+                        // stopLoading() doesn't reliably push a final
+                        // onProgressChanged(100)/onPageFinished, so settle the
+                        // chrome ourselves — otherwise the progress bar and the
+                        // stop icon could stay stuck.
+                        viewModel.onProgressChanged(100)
+                    } else {
+                        webView.reload()
+                    }
                 },
                 onTogglePrivate = {
                     val next = !isPrivate

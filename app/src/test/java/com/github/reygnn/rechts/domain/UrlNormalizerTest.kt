@@ -35,6 +35,23 @@ class UrlNormalizerTest {
     }
 
     @Test
+    fun `opaque intent scheme is passed through for external dispatch`() {
+        // The opaque intent: form (no "://") must be handed on verbatim, like
+        // the hierarchical intent://… form, so the web layer can dispatch it —
+        // not fall through to a web search.
+        val url = "intent:#Intent;action=android.intent.action.VIEW;end"
+        assertEquals(url, UrlNormalizer.toUrlOrSearch(url))
+    }
+
+    @Test
+    fun `hierarchical intent url is passed through`() {
+        assertEquals(
+            "intent://scan/#Intent;scheme=zxing;end",
+            UrlNormalizer.toUrlOrSearch("intent://scan/#Intent;scheme=zxing;end"),
+        )
+    }
+
+    @Test
     fun `javascript scheme is NOT passed through but searched (self-XSS guard)`() {
         val result = UrlNormalizer.toUrlOrSearch("javascript:alert(document.cookie)")
         assertTrue("expected a search, got: $result", result!!.startsWith("https://duckduckgo.com/?q="))

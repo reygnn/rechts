@@ -55,7 +55,13 @@ class BrowserViewModel : ViewModel() {
 
     fun onAddressFocusChanged(focused: Boolean) {
         addressBarFocused = focused
-        if (!focused) {
+        if (focused) {
+            // Gaining focus closes any prior submit's blur window: clear a stale
+            // flag so a later abandon-edit blur still restores the page URL even
+            // if the post-submit blur never arrived (e.g. focus was already
+            // elsewhere when submit fired).
+            submitInFlight = false
+        } else {
             // A blur right after a submit must leave the entry alone — the
             // imminent page load updates the bar. Otherwise (blur abandoning an
             // edit) restore the real page URL.
@@ -68,6 +74,8 @@ class BrowserViewModel : ViewModel() {
     fun onAddressSubmit() {
         val target = UrlNormalizer.toUrlOrSearch(_uiState.value.addressText) ?: return
         submitInFlight = true
+        // Best-effort: the BUFFERED channel has ample capacity, and a request
+        // sent before the collector attaches is buffered (not dropped).
         _loadRequests.trySend(target)
     }
 

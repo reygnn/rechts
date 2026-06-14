@@ -23,4 +23,6 @@
     <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
     <string name="download_unsupported">Downloads aren\'t supported</string>
     <string name="file_upload_unsupported">File upload isn\'t supported</string>
+    <string name="no_app_to_handle">No app can open this link</string>
+    <string name="page_crash_repeated">This page keeps crashing — returned to the start page</string>
 </resources>

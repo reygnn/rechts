@@ -118,6 +118,16 @@ object ExternalScheme {
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 component = null
                 selector = null
+                // Strip URI-permission grants a hostile page could smuggle in via
+                // the intent: string; rechts grants no app access to its data.
+                // (package= is left intact — app deep links legitimately target a
+                // specific package, and component/BROWSABLE already constrain it.)
+                flags = flags and (
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+                    ).inv()
             }
         } else {
             Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {

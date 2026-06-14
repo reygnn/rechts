@@ -23,4 +23,6 @@
     <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
     <string name="download_unsupported">Downloads werden nicht unterstützt</string>
     <string name="file_upload_unsupported">Datei-Upload wird nicht unterstützt</string>
+    <string name="no_app_to_handle">Keine App kann diesen Link öffnen</string>
+    <string name="page_crash_repeated">Diese Seite stürzt wiederholt ab — zurück zur Startseite</string>
 </resources>
