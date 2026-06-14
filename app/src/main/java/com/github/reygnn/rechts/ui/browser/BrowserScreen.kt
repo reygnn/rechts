@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -178,12 +179,15 @@ private fun BrowserChrome(
             }
 
             // Determinate progress bar. Always laid out (only faded out when
-            // idle) so showing/hiding it never shifts the WebView below.
+            // idle) so showing/hiding it never shifts the WebView below. When
+            // idle it is also removed from the semantics tree, so a screen
+            // reader doesn't announce an invisible "100%" progress bar.
             LinearProgressIndicator(
                 progress = { state.progress / 100f },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .alpha(if (state.isLoading) 1f else 0f),
+                    .alpha(if (state.isLoading) 1f else 0f)
+                    .then(if (state.isLoading) Modifier else Modifier.clearAndSetSemantics {}),
             )
         }
     }
