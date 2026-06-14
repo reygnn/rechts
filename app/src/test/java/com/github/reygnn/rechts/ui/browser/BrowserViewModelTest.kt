@@ -20,7 +20,7 @@ class BrowserViewModelTest {
         val state = vm.uiState.value
         assertEquals("", state.addressText)
         assertEquals("", state.currentUrl)
-        assertEquals(0, state.progress)
+        assertEquals(100, state.progress)
         assertFalse(state.isLoading)
         assertFalse(state.canGoBack)
         assertFalse(state.canGoForward)
@@ -75,48 +75,76 @@ class BrowserViewModelTest {
     }
 
     @Test
-    fun `onPageStarted marks loading and mirrors url into address bar`() = runTest(mainRule.dispatcher) {
+    fun `a request submitted before the collector attaches is still delivered`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            // Emit first, subscribe later — the buffered Channel must not drop it.
+            vm.onAddressChange("example.com")
+            vm.onAddressSubmit()
+            vm.loadRequests.test {
+                assertEquals("https://example.com", awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `onPageStarted marks loading and mirrors url and history`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
-        vm.onPageStarted("https://example.com")
+        vm.onPageStarted("https://example.com", canGoBack = true, canGoForward = false)
         val state = vm.uiState.value
         assertEquals("https://example.com", state.currentUrl)
         assertEquals("https://example.com", state.addressText)
         assertEquals(0, state.progress)
         assertTrue(state.isLoading)
+        assertTrue(state.canGoBack)
+        assertFalse(state.canGoForward)
     }
 
     @Test
-    fun `onProgressChanged below 100 keeps loading`() = runTest(mainRule.dispatcher) {
+    fun `onProgressChanged below 100 is loading, at 100 is idle`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onProgressChanged(40)
         assertEquals(40, vm.uiState.value.progress)
         assertTrue(vm.uiState.value.isLoading)
-    }
 
-    @Test
-    fun `onProgressChanged at 100 clears loading`() = runTest(mainRule.dispatcher) {
-        val vm = BrowserViewModel()
         vm.onProgressChanged(100)
         assertEquals(100, vm.uiState.value.progress)
         assertFalse(vm.uiState.value.isLoading)
     }
 
     @Test
-    fun `onPageFinished settles to loaded state`() = runTest(mainRule.dispatcher) {
+    fun `onPageFinished settles to loaded state and history`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
-        vm.onPageStarted("https://example.com")
-        vm.onPageFinished("https://example.com/after-redirect")
+        vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+        vm.onPageFinished("https://example.com/after-redirect", canGoBack = true, canGoForward = true)
         val state = vm.uiState.value
         assertEquals("https://example.com/after-redirect", state.currentUrl)
         assertEquals(100, state.progress)
         assertFalse(state.isLoading)
+        assertTrue(state.canGoBack)
+        assertTrue(state.canGoForward)
     }
 
     @Test
-    fun `onNavStateChanged updates history flags`() = runTest(mainRule.dispatcher) {
+    fun `page events do not clobber the address bar while the user is editing`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onAddressFocusChanged(true)
+            vm.onAddressChange("github.c")               // user mid-keystroke
+            // A background redirect fires while the user types.
+            vm.onPageStarted("https://ads.example/redirect", canGoBack = false, canGoForward = false)
+            assertEquals("github.c", vm.uiState.value.addressText)
+            // ...but the real page URL is still tracked underneath.
+            assertEquals("https://ads.example/redirect", vm.uiState.value.currentUrl)
+        }
+
+    @Test
+    fun `blurring the address bar restores the current page url`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
-        vm.onNavStateChanged(canGoBack = true, canGoForward = false)
-        assertTrue(vm.uiState.value.canGoBack)
-        assertFalse(vm.uiState.value.canGoForward)
+        vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+        vm.onAddressFocusChanged(true)
+        vm.onAddressChange("half-typed")
+        vm.onAddressFocusChanged(false)
+        assertEquals("https://example.com", vm.uiState.value.addressText)
     }
 }

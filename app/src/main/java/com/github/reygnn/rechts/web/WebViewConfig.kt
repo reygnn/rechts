@@ -25,7 +25,12 @@ object WebViewConfig {
             javaScriptEnabled = true
             domStorageEnabled = true
 
-            // Lock the web content out of the local file system.
+            // Lock the web content out of the local file system. This is the
+            // documented hard privacy boundary (CLAUDE.md). The cross-origin
+            // file-URL escape hatches (allowFileAccessFromFileURLs /
+            // allowUniversalAccessFromFileURLs) are NOT set here on purpose:
+            // they default to false on SDK 36 and are deprecated/forced-off for
+            // apps targeting R+, so there is nothing to re-enable.
             allowFileAccess = false
             allowContentAccess = false
 

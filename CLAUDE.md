@@ -57,7 +57,7 @@ com.github.reygnn.rechts/
     MainActivity.kt              — ComponentActivity, edge-to-edge, hosts BrowserScreen
     browser/
       BrowserScreen.kt           — Compose chrome + AndroidView(WebView); wires WebViewClient/ChromeClient → VM
-      BrowserViewModel.kt        — StateFlow<BrowserUiState> + SharedFlow<String> loadRequests
+      BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests
       BrowserUiState.kt          — chrome state (address, progress, history flags)
     theme/                       — RechtsTheme, static teal Color palette
   domain/
@@ -83,9 +83,10 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
 3. **Privacy defaults are load-bearing, not incidental:** JavaScript on,
    first-party cookies on, **third-party cookies off**, no file/content
    access. Live in `WebViewConfig`. Don't loosen them without a reason.
-4. **DuckDuckGo is the search + home default** (privacy-friendly). If this
-   changes, change it in `UrlNormalizer.SEARCH_PREFIX` and
-   `BrowserScreen.HOME_URL` together.
+4. **DuckDuckGo is the search + home default** (privacy-friendly). Single
+   source of truth: `UrlNormalizer.HOME_URL`; the search endpoint
+   (`SEARCH_PREFIX`) is derived from it and `BrowserScreen` reads
+   `UrlNormalizer.HOME_URL` for the homepage. Change it in one place.
 5. **Known limitation:** WebView page state is lost on configuration change
    (rotation) — acceptable for "minimal". Don't paper over it with an
    orientation lock; if it ever matters, solve it with proper state saving.

@@ -7,10 +7,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -28,10 +31,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -39,18 +45,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.reygnn.rechts.R
+import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.web.WebViewConfig
-
-/** Page shown on launch — DuckDuckGo, matching the search default. */
-private const val HOME_URL = "https://duckduckgo.com"
 
 @Composable
 fun BrowserScreen(
@@ -73,13 +72,11 @@ fun BrowserScreen(
 
             webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                    viewModel.onPageStarted(url)
-                    viewModel.onNavStateChanged(view.canGoBack(), view.canGoForward())
+                    viewModel.onPageStarted(url, view.canGoBack(), view.canGoForward())
                 }
 
                 override fun onPageFinished(view: WebView, url: String) {
-                    viewModel.onPageFinished(url)
-                    viewModel.onNavStateChanged(view.canGoBack(), view.canGoForward())
+                    viewModel.onPageFinished(url, view.canGoBack(), view.canGoForward())
                 }
             }
 
@@ -87,17 +84,13 @@ fun BrowserScreen(
                 override fun onProgressChanged(view: WebView, newProgress: Int) {
                     viewModel.onProgressChanged(newProgress)
                 }
-
-                override fun onReceivedTitle(view: WebView, title: String) {
-                    viewModel.onTitleChanged(title)
-                }
             }
         }
     }
 
     // Load the homepage on first composition only.
     LaunchedEffect(Unit) {
-        if (webView.url == null) webView.loadUrl(HOME_URL)
+        if (webView.url == null) webView.loadUrl(UrlNormalizer.HOME_URL)
     }
 
     // Forward load requests coming out of the ViewModel to the WebView.
@@ -123,6 +116,7 @@ fun BrowserScreen(
                 },
                 onAddressChange = viewModel::onAddressChange,
                 onAddressClear = viewModel::onAddressClear,
+                onAddressFocusChanged = viewModel::onAddressFocusChanged,
                 onAddressSubmit = {
                     viewModel.onAddressSubmit()
                     focusManager.clearFocus()
@@ -130,9 +124,11 @@ fun BrowserScreen(
             )
             AndroidView(
                 factory = { webView },
+                // Only the bottom (navigation-bar) inset belongs here; the
+                // chrome already consumes the top inset via statusBarsPadding().
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(contentPadding),
+                    .padding(bottom = contentPadding.calculateBottomPadding()),
             )
         }
     }
@@ -146,6 +142,7 @@ private fun BrowserChrome(
     onReloadOrStop: () -> Unit,
     onAddressChange: (String) -> Unit,
     onAddressClear: () -> Unit,
+    onAddressFocusChanged: (Boolean) -> Unit,
     onAddressSubmit: () -> Unit,
 ) {
     Surface(tonalElevation = 3.dp) {
@@ -166,6 +163,7 @@ private fun BrowserChrome(
                     value = state.addressText,
                     onValueChange = onAddressChange,
                     onClear = onAddressClear,
+                    onFocusChanged = onAddressFocusChanged,
                     onSubmit = onAddressSubmit,
                     modifier = Modifier.weight(1f),
                 )
@@ -194,13 +192,14 @@ private fun AddressField(
     value: String,
     onValueChange: (String) -> Unit,
     onClear: () -> Unit,
+    onFocusChanged: (Boolean) -> Unit,
     onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     TextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = modifier.onFocusChanged { onFocusChanged(it.isFocused) },
         singleLine = true,
         placeholder = { Text(stringResource(R.string.address_hint)) },
         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },

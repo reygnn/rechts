@@ -64,9 +64,10 @@ All JVM-only. Run with `./gradlew testDebugUnitTest`.
 
 The full catalogue lives in `TESTING_CONVENTIONS.kt`. Most relevant here:
 
-- **`MutableSharedFlow` buffer trap** — `loadRequests` has `replay = 0`.
-  Observe it with Turbine (`vm.loadRequests.test { … }`), subscribing
-  *before* calling `onAddressSubmit()`; a late collector misses the
-  emission.
+- **`loadRequests` is a buffered `Channel` (via `receiveAsFlow`)**, not a
+  `replay = 0` SharedFlow — a request submitted before the collector
+  attaches is buffered and still delivered (there's a test for exactly
+  that). Observe it with Turbine (`vm.loadRequests.test { … }`). Note a
+  channel-backed flow is single-collection; each test uses a fresh VM.
 - **Dispatcher mix-up** — drive `runTest` with `mainRule.dispatcher`, never
   a second standalone dispatcher.
