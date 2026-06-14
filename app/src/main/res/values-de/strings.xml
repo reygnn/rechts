@@ -10,4 +10,8 @@
     <string name="nav_forward">Vorwärts</string>
     <string name="nav_reload">Neu laden</string>
     <string name="nav_stop">Laden stoppen</string>
+
+    <!-- Private mode toggle -->
+    <string name="private_enable">Privaten Modus einschalten</string>
+    <string name="private_disable">Privaten Modus ausschalten</string>
 </resources>

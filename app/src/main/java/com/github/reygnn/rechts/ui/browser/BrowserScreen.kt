@@ -1,6 +1,6 @@
 package com.github.reygnn.rechts.ui.browser
 
-import android.app.Activity
+import android.content.Context
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -20,10 +20,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -35,7 +37,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -51,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.reygnn.rechts.R
+import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.web.WebViewConfig
 
@@ -61,43 +68,24 @@ fun BrowserScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val activity = context as? Activity
     val focusManager = LocalFocusManager.current
 
-    // The WebView is created once and survives recomposition. It is the source
-    // of truth for the page; the ViewModel only mirrors chrome state.
-    val webView = remember {
-        WebView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-            WebViewConfig.apply(this)
+    // Chosen browsing mode, seeded from the persisted preference and remembered
+    // across configuration changes. Toggling it persists the choice and (via
+    // remember(isPrivate) below) rebuilds the WebView on the right profile.
+    val settings = remember { SettingsStore(context) }
+    var isPrivate by rememberSaveable { mutableStateOf(settings.privateMode) }
 
-            webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                    viewModel.onPageStarted(url, view.canGoBack(), view.canGoForward())
-                }
+    // One WebView per mode: switching modes recreates it bound to the other
+    // profile (normal = persistent default, private = isolated, session-only).
+    val webView = remember(isPrivate) { createBrowserWebView(context, viewModel, isPrivate) }
 
-                override fun onPageFinished(view: WebView, url: String) {
-                    viewModel.onPageFinished(url, view.canGoBack(), view.canGoForward())
-                }
-            }
-
-            webChromeClient = object : WebChromeClient() {
-                override fun onProgressChanged(view: WebView, newProgress: Int) {
-                    viewModel.onProgressChanged(newProgress)
-                }
-            }
-        }
-    }
-
-    // Load the homepage on first composition only.
-    LaunchedEffect(Unit) {
+    // Load the homepage whenever a fresh WebView appears (launch or mode switch).
+    LaunchedEffect(webView) {
         if (webView.url == null) webView.loadUrl(UrlNormalizer.HOME_URL)
     }
 
-    // Forward load requests coming out of the ViewModel to the WebView.
+    // Forward load requests coming out of the ViewModel to the current WebView.
     LaunchedEffect(webView) {
         viewModel.loadRequests.collect { url -> webView.loadUrl(url) }
     }
@@ -105,26 +93,25 @@ fun BrowserScreen(
     // System back navigates page history before leaving the app.
     BackHandler(enabled = state.canGoBack) { webView.goBack() }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            // Private by default: when the user is actually leaving (not a
-            // configuration change), wipe cookies, web storage, cache and
-            // history so nothing from this session survives.
-            if (activity?.isFinishing == true) {
-                WebViewConfig.clearAll(webView)
-            }
-            webView.destroy()
-        }
+    // Destroy the WebView when it's replaced (mode switch) or the screen leaves.
+    DisposableEffect(webView) {
+        onDispose { webView.destroy() }
     }
 
     Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->
         Column(Modifier.fillMaxSize()) {
             BrowserChrome(
                 state = state,
+                isPrivate = isPrivate,
                 onBack = { webView.goBack() },
                 onForward = { webView.goForward() },
                 onReloadOrStop = {
                     if (state.isLoading) webView.stopLoading() else webView.reload()
+                },
+                onTogglePrivate = {
+                    val next = !isPrivate
+                    isPrivate = next
+                    settings.privateMode = next
                 },
                 onAddressChange = viewModel::onAddressChange,
                 onAddressClear = viewModel::onAddressClear,
@@ -134,24 +121,59 @@ fun BrowserScreen(
                     focusManager.clearFocus()
                 },
             )
-            AndroidView(
-                factory = { webView },
-                // Only the bottom (navigation-bar) inset belongs here; the
-                // chrome already consumes the top inset via statusBarsPadding().
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = contentPadding.calculateBottomPadding()),
-            )
+            // key(webView) so AndroidView swaps to the new instance on a mode switch.
+            key(webView) {
+                AndroidView(
+                    factory = { webView },
+                    // Only the bottom (navigation-bar) inset belongs here; the
+                    // chrome already consumes the top inset via statusBarsPadding().
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = contentPadding.calculateBottomPadding()),
+                )
+            }
         }
     }
+}
+
+private fun createBrowserWebView(
+    context: Context,
+    viewModel: BrowserViewModel,
+    privateMode: Boolean,
+): WebView = WebView(context).apply {
+    layoutParams = ViewGroup.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    )
+
+    webViewClient = object : WebViewClient() {
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            viewModel.onPageStarted(url, view.canGoBack(), view.canGoForward())
+        }
+
+        override fun onPageFinished(view: WebView, url: String) {
+            viewModel.onPageFinished(url, view.canGoBack(), view.canGoForward())
+        }
+    }
+
+    webChromeClient = object : WebChromeClient() {
+        override fun onProgressChanged(view: WebView, newProgress: Int) {
+            viewModel.onProgressChanged(newProgress)
+        }
+    }
+
+    // Bind the profile (private vs default) BEFORE the WebView loads anything.
+    WebViewConfig.apply(this, privateMode)
 }
 
 @Composable
 private fun BrowserChrome(
     state: BrowserUiState,
+    isPrivate: Boolean,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
+    onTogglePrivate: () -> Unit,
     onAddressChange: (String) -> Unit,
     onAddressClear: () -> Unit,
     onAddressFocusChanged: (Boolean) -> Unit,
@@ -185,6 +207,24 @@ private fun BrowserChrome(
                     } else {
                         Icon(Icons.Filled.Refresh, stringResource(R.string.nav_reload))
                     }
+                }
+                // Private-mode toggle: highlighted (primary) when active.
+                IconButton(
+                    onClick = onTogglePrivate,
+                    colors = if (isPrivate) {
+                        IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.primary,
+                        )
+                    } else {
+                        IconButtonDefaults.iconButtonColors()
+                    },
+                ) {
+                    Icon(
+                        Icons.Filled.Lock,
+                        contentDescription = stringResource(
+                            if (isPrivate) R.string.private_disable else R.string.private_enable,
+                        ),
+                    )
                 }
             }
 

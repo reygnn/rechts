@@ -38,10 +38,14 @@ explicit user agreement before being built):
 
 ## Stack particulars
 
-Baseline only — nothing project-specific. No extra dependencies beyond the
-shared core: the browser is built on the platform `android.webkit.WebView`,
-which needs no library. No DataStore, no Room, no DI framework, no custom
-`Application` class.
+Almost baseline. The browser is the platform `android.webkit.WebView`. Two
+project-specific bits:
+- **`androidx.webkit`** — its `Profile` API gives the optional private mode a
+  cookie/storage jar that's isolated from normal browsing.
+- **SharedPreferences** (one boolean: the remembered browsing mode) — DataStore
+  would be overkill for a single value.
+
+No Room, no DI framework, no custom `Application` class.
 
 ---
 
@@ -54,16 +58,18 @@ persist.
 ```
 com.github.reygnn.rechts/
   ui/
-    MainActivity.kt              — ComponentActivity, edge-to-edge, hosts BrowserScreen
+    MainActivity.kt              — ComponentActivity, edge-to-edge, hosts BrowserScreen; wipes the private profile on cold start
     browser/
-      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); wires WebViewClient/ChromeClient → VM
+      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); mode toggle; wires WebViewClient/ChromeClient → VM
       BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests
       BrowserUiState.kt          — chrome state (address, progress, history flags)
     theme/                       — RechtsTheme, static teal Color palette
   domain/
     UrlNormalizer.kt             — pure: typed text → URL or DuckDuckGo search
+  data/
+    SettingsStore.kt             — SharedPreferences; remembers the browsing mode
   web/
-    WebViewConfig.kt             — applies the "JS on, private" WebView settings
+    WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + private wipe
 ```
 
 Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
@@ -83,12 +89,14 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
 3. **Privacy defaults are load-bearing, not incidental:** JavaScript on,
    first-party cookies on, **third-party cookies off**, no file/content
    access. Live in `WebViewConfig`. Don't loosen them without a reason.
-   **Private by default:** the session is wiped (cookies, web storage, cache,
-   history) on a cold launch (`MainActivity.onCreate`, guarded by
-   `savedInstanceState == null`) and on real exit (`BrowserScreen`'s
-   `onDispose` when `activity.isFinishing`). A config-change recreation must
-   NOT wipe — that's why both checks exist. Wiping lives in
-   `WebViewConfig.clearAll` / `clearCookiesAndStorage`.
+   **Private mode is optional and profile-isolated:** normal browsing uses the
+   default `ProfileStore` profile (persistent — saved logins live here, never
+   wipe it); private browsing uses the separate `WebViewConfig.PRIVATE_PROFILE`,
+   wiped on a cold launch (`MainActivity.onCreate` → `clearPrivateData()`,
+   guarded by `savedInstanceState == null` so rotation keeps the session).
+   Switching mode rebuilds the WebView on the other profile — that's why the
+   WebView is `remember(isPrivate)` and the `AndroidView` sits in `key(webView)`.
+   The chosen mode persists via `SettingsStore` (SharedPreferences).
 4. **DuckDuckGo is the search + home default** (privacy-friendly). Single
    source of truth: `UrlNormalizer.HOME_URL`; the search endpoint
    (`SEARCH_PREFIX`) is derived from it and `BrowserScreen` reads

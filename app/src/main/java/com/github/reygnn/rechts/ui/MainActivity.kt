@@ -14,12 +14,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Private by default: a genuinely fresh launch starts with no leftovers
-        // from a previous session (covers the case where the app was killed
-        // before onDispose could wipe). A configuration-change recreation has a
-        // non-null savedInstanceState, so rotation does NOT clear the session.
+        // On a genuine cold launch, drop any leftover private-browsing data so a
+        // private session never outlives the app. The normal/default profile —
+        // and therefore saved logins — is untouched. A configuration-change
+        // recreation has a non-null savedInstanceState, so rotation keeps the
+        // current private session intact.
         if (savedInstanceState == null) {
-            WebViewConfig.clearCookiesAndStorage()
+            WebViewConfig.clearPrivateData()
         }
         enableEdgeToEdge()
         setContent {

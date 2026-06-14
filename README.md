@@ -18,18 +18,18 @@ no settings.
 
 ## Privacy
 
-**Private by default.** Cookies, web storage (localStorage), the HTTP cache and
-history are wiped both on a fresh launch and when you close the app — nothing
-from a browsing session survives it. Within a session, first-party cookies and
-DOM storage work normally so sites stay logged in; they just don't outlive the
-session.
+JavaScript is on (the modern web needs it), **third-party cookies are blocked**,
+web content can't reach the device's file system, app data is excluded from
+cloud backup, and search defaults to DuckDuckGo.
 
-On top of that: JavaScript on (the modern web needs it), **third-party cookies
-blocked**, web content can't reach the device's file system, and app data is
-excluded from cloud backup. Search defaults to DuckDuckGo.
+**Optional private mode.** Tap the lock icon to toggle it. Normal browsing uses a
+persistent profile, so logins and cookies are remembered across launches.
+Private browsing uses a separate, isolated profile: its cookies and storage
+never touch the normal ones and are wiped on the next cold launch, so a private
+session doesn't outlive the app. The chosen mode is remembered.
 
-Note: a configuration change (e.g. rotation) does *not* wipe the session — only
-genuinely leaving the app does.
+Isolation uses the platform WebView's multi-profile support; on the unlikely
+device without it, private mode falls back to the normal profile.
 
 ## Build & run
 

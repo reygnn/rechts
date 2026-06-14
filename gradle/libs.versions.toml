@@ -16,6 +16,10 @@ lifecycleRuntimeKtx = "2.10.0"
 activityCompose     = "1.13.0"
 composeBom          = "2026.05.01"
 
+# androidx.webkit — Profile API for optional, isolated private browsing
+# (MULTI_PROFILE since 1.10.0). Project-specific, not part of the family core.
+webkit              = "1.12.1"
+
 # Testing (JVM-only baseline: JUnit 4 + MockK + Turbine + coroutines-test)
 junit               = "4.13.2"
 mockk               = "1.14.9"
@@ -35,6 +39,7 @@ androidx-ui-tooling                  = { group = "androidx.compose.ui",        n
 androidx-ui-tooling-preview          = { group = "androidx.compose.ui",        name = "ui-tooling-preview" }
 androidx-material3                   = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
+androidx-webkit                      = { group = "androidx.webkit",            name = "webkit",                      version.ref = "webkit" }
 
 junit                   = { group = "junit",                 name = "junit",                   version.ref = "junit" }
 mockk                   = { group = "io.mockk",              name = "mockk",                   version.ref = "mockk" }

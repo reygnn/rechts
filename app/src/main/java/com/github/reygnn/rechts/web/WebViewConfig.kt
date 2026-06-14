@@ -1,42 +1,60 @@
 package com.github.reygnn.rechts.web
 
 import android.annotation.SuppressLint
+import android.util.Log
 import android.webkit.CookieManager
-import android.webkit.WebStorage
 import android.webkit.WebView
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 
 /**
- * Applies rechts' "JS on, but private" defaults to a [WebView] and provides the
- * data-wiping used to keep browsing session-only.
+ * Applies rechts' WebView defaults and wires up the optional private mode.
  *
  * The deal (see CLAUDE.md → Hard rules):
  *  - JavaScript + DOM storage ON — the modern web needs them.
  *  - First-party cookies allowed, **third-party cookies blocked** — kills the
  *    most common cross-site tracking vector.
- *  - No file/content access from web content — a web page can't reach into the
- *    device's files.
- *  - **Private by default:** cookies, web storage, cache and history are wiped
- *    on a fresh launch and again when the app is closed (see [clearAll] /
- *    [clearCookiesAndStorage]). DOM storage and cookies still work *within* a
- *    session, but nothing survives it.
+ *  - No file/content access from web content.
  *  - Safe Browsing left at its platform default (on).
+ *
+ * **Private mode is optional and isolated.** Normal browsing uses the default
+ * [ProfileStore] profile, which persists cookies/logins across launches.
+ * Private browsing uses a separate [PRIVATE_PROFILE] profile with its own
+ * cookie/storage jar; that jar is wiped on a cold launch ([clearPrivateData]),
+ * so private sessions don't outlive the app — and the normal profile is never
+ * touched, so saved logins survive.
  */
 object WebViewConfig {
 
-    // JavaScript is enabled deliberately — that's the product decision, not an
-    // oversight. Lint would otherwise flag setJavaScriptEnabled(true).
+    private const val TAG = "WebViewConfig"
+
+    /** Name of the isolated profile used while private mode is on. */
+    const val PRIVATE_PROFILE = "private"
+
+    /**
+     * Configures [webView]. When [privateMode] is on (and the platform WebView
+     * supports multiple profiles), the WebView is bound to the isolated
+     * [PRIVATE_PROFILE] before it loads anything.
+     */
     @SuppressLint("SetJavaScriptEnabled")
-    fun apply(webView: WebView) {
+    fun apply(webView: WebView, privateMode: Boolean) {
+        // Bind the isolated profile FIRST — it must be set before the WebView
+        // navigates anywhere.
+        if (privateMode && multiProfileSupported()) {
+            ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
+            WebViewCompat.setProfile(webView, PRIVATE_PROFILE)
+        }
+
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
 
             // Lock the web content out of the local file system. This is the
             // documented hard privacy boundary (CLAUDE.md). The cross-origin
-            // file-URL escape hatches (allowFileAccessFromFileURLs /
-            // allowUniversalAccessFromFileURLs) are NOT set here on purpose:
-            // they default to false on SDK 36 and are deprecated/forced-off for
-            // apps targeting R+, so there is nothing to re-enable.
+            // file-URL escape hatches default to false on SDK 36 and are
+            // deprecated/forced-off for apps targeting R+, so there is nothing
+            // to re-enable here.
             allowFileAccess = false
             allowContentAccess = false
 
@@ -55,27 +73,17 @@ object WebViewConfig {
     }
 
     /**
-     * Wipes the persistent stores that need no live [WebView]: cookies and web
-     * storage (localStorage / IndexedDB / WebSQL). Safe to call before any
-     * WebView exists — used on a cold launch to drop leftovers from a session
-     * that was killed without a clean teardown.
+     * Deletes the isolated private-browsing profile and all its data. Safe to
+     * call when no WebView is using that profile (e.g. on a cold launch). The
+     * normal/default profile — and therefore saved logins — is untouched.
      */
-    fun clearCookiesAndStorage() {
-        CookieManager.getInstance().apply {
-            removeAllCookies(null)
-            flush()
-        }
-        WebStorage.getInstance().deleteAllData()
+    fun clearPrivateData() {
+        if (!multiProfileSupported()) return
+        runCatching { ProfileStore.getInstance().deleteProfile(PRIVATE_PROFILE) }
+            .onFailure { Log.w(TAG, "Could not delete private profile", it) }
     }
 
-    /**
-     * Full wipe used when the app is closing: [clearCookiesAndStorage] plus the
-     * [webView]-bound HTTP cache and back/forward history. Call before
-     * [WebView.destroy].
-     */
-    fun clearAll(webView: WebView) {
-        clearCookiesAndStorage()
-        webView.clearCache(true)
-        webView.clearHistory()
-    }
+    /** Whether this device's WebView supports isolated profiles. */
+    fun multiProfileSupported(): Boolean =
+        WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
 }
