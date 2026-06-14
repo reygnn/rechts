@@ -20,7 +20,6 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -100,8 +99,8 @@ import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.web.ExternalScheme
+import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
-import java.io.ByteArrayInputStream
 
 private const val TAG = "BrowserScreen"
 
@@ -564,80 +563,33 @@ private fun createBrowserWebView(
             // weakened. It stays otherwise locked down (no WebViewConfig.apply →
             // JavaScript off); its only job is the capture below.
             WebViewConfig.bindProfile(href, privateMode)
-            var captured = false
-            // Hand a captured popup target to the MAIN view (or off to another
-            // app). Main-thread only — both call sites post onto it.
-            fun routeCapturedUrl(url: String) {
-                when {
-                    ExternalScheme.isInternal(url) -> view.loadUrl(url)
-                    ExternalScheme.dispatch(view.context, url, fromWebContent = true) -> Unit
-                    else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
-                }
-            }
-            href.webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(
-                    inner: WebView,
-                    request: WebResourceRequest,
-                ): Boolean {
-                    val url = request.url.toString()
-                    // window.open() / window.open('about:blank') navigates the
-                    // popup to about:blank FIRST; that's not the real target.
-                    // Redirecting it into the main view would blank the user's
-                    // current page and discard the real URL the opener sets via
-                    // w.location afterwards. Let the (locked-down) capture view
-                    // load about:blank and keep waiting for the real navigation.
-                    if (url == "about:blank") return false
-                    captured = true
-                    routeCapturedUrl(url)
-                    // The capture WebView has done its one job; tear it down off
-                    // the callback stack (destroy() mid-callback is unsafe). The
-                    // set-membership check is the single-owner guard so the screen
-                    // tearing it down first can't cause a double destroy.
-                    inner.post { if (captureWebViews.remove(href)) inner.destroy() }
-                    return true
-                }
-
-                // Safety net: shouldOverrideUrlLoading is NOT guaranteed to fire
-                // for a popup's engine-initiated first navigation (window.open
-                // targets). On a WebView build that skips it, the off-screen
-                // capture view would otherwise silently fetch the real target —
-                // hitting the network and storing cookies in the profile — until
-                // its timeout. Intercept the main-frame request instead: capture
-                // the URL and return an empty body so the throwaway view never
-                // actually loads the page. Runs on a background thread, so every
-                // main-thread touch (routing into the live WebView, the
-                // capture-set, destroy) is posted; the !captured guard there keeps
-                // it idempotent with the override above (whichever fires first
-                // wins, the other no-ops).
-                override fun shouldInterceptRequest(
-                    inner: WebView,
-                    request: WebResourceRequest,
-                ): WebResourceResponse? {
-                    val url = request.url.toString()
-                    if (!request.isForMainFrame || url == "about:blank") return null
-                    inner.post {
-                        if (!captured) {
-                            captured = true
-                            routeCapturedUrl(url)
-                            if (captureWebViews.remove(href)) href.destroy()
-                        }
+            // Capture/blocking logic lives in the testable PopupCaptureClient;
+            // here we only wire its side effects to this concrete WebView.
+            href.webViewClient = PopupCaptureClient(
+                // Route a captured popup target into the MAIN view (or off to
+                // another app). Invoked on the main thread.
+                routeTarget = { url ->
+                    when {
+                        ExternalScheme.isInternal(url) -> view.loadUrl(url)
+                        ExternalScheme.dispatch(view.context, url, fromWebContent = true) -> Unit
+                        else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
                     }
-                    return WebResourceResponse(
-                        "text/plain",
-                        "utf-8",
-                        ByteArrayInputStream(ByteArray(0)),
-                    )
-                }
-            }
+                },
+                // Single-owner teardown: set membership is the token, so whoever
+                // removes the view owns its destroy() — no double free.
+                tearDown = { if (captureWebViews.remove(href)) href.destroy() },
+                postToMainThread = { href.post(it) },
+            )
             transport.webView = href
             resultMsg.sendToTarget()
             // Safety net against a popup that never triggers a navigation we can
             // capture (e.g. window.open() with no URL): without this the capture
-            // WebView would leak, since it only self-destructs from inside the
-            // override above. No-op once it has done its job (or the screen tore
-            // it down first — the membership check guards the double destroy).
+            // WebView would leak, since it otherwise self-destructs only from the
+            // capture paths above. The set-membership check is the single-owner
+            // guard, so this no-ops once the view has been torn down elsewhere
+            // (captured + removed, or the screen disposed first).
             href.postDelayed(
-                { if (!captured && captureWebViews.remove(href)) href.destroy() },
+                { if (captureWebViews.remove(href)) href.destroy() },
                 CAPTURE_WEBVIEW_TIMEOUT_MS,
             )
             return true
