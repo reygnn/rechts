@@ -15,7 +15,12 @@ sealed interface FirstLoadAction {
      */
     data class DispatchInbound(val url: String) : FirstLoadAction
 
-    /** Reconstruct the persisted back/forward history (process-death restore). */
+    /**
+     * Reconstruct a serialized back/forward history. The caller picks the source:
+     * the disk-persisted bundle on the very first composition (process-death
+     * restore), or the in-memory normal-session snapshot when switching back from
+     * private mode.
+     */
     data object RestoreHistory : FirstLoadAction
 }
 
@@ -31,10 +36,14 @@ object FirstLoadRouter {
     /**
      * @param crashReload      URL to reopen after a renderer-crash rebuild, else null.
      * @param inbound          unconsumed inbound ACTION_VIEW URL, else null.
-     * @param firstComposition true only on the WebView's very first composition
-     *                         (so a mode switch never restores the other profile).
-     * @param isPrivate        whether private mode is active (never restored).
-     * @param hasSavedHistory  whether process-death history is available to restore.
+     * @param firstComposition  true only on the WebView's very first composition.
+     * @param isPrivate          whether private mode is active (never restored —
+     *                           private always opens the homepage).
+     * @param hasSavedHistory    whether process-death history is available to
+     *                           restore (only consulted on the first composition).
+     * @param hasNormalModeHistory whether an in-memory normal-session snapshot is
+     *                           available to restore when switching back from
+     *                           private (only on a later composition).
      */
     fun decide(
         crashReload: String?,
@@ -42,6 +51,7 @@ object FirstLoadRouter {
         firstComposition: Boolean,
         isPrivate: Boolean,
         hasSavedHistory: Boolean,
+        hasNormalModeHistory: Boolean,
     ): FirstLoadAction = when {
         // Renderer was rebuilt after a crash: reopen the page we were on.
         crashReload != null -> FirstLoadAction.LoadInWebView(crashReload)
@@ -56,6 +66,11 @@ object FirstLoadRouter {
         // Process-death restore — normal mode only. A private session is never
         // reconstructed from disk-persisted state.
         firstComposition && !isPrivate && hasSavedHistory -> FirstLoadAction.RestoreHistory
+
+        // Switching back to normal mode (a later composition): restore the
+        // in-memory snapshot of the normal session taken when we left it. Private
+        // is excluded — it always opens the homepage.
+        !firstComposition && !isPrivate && hasNormalModeHistory -> FirstLoadAction.RestoreHistory
 
         else -> FirstLoadAction.LoadInWebView(UrlNormalizer.HOME_URL)
     }

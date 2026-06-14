@@ -121,13 +121,20 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    the homepage again. **Process death** (not config change) *is* covered by
    `WebView.saveState`/`restoreState`: `BrowserScreen` snapshots the history
    into a `rememberSaveable` `Bundle` and restores it on the first composition
-   only — a mode switch (which also rebuilds the WebView) deliberately does
-   *not* restore, so profiles don't bleed into each other. **A private session
-   is never persisted**: the saver skips `saveState` while `isPrivate`, and the
-   restore branch is gated on `!isPrivate`, so private URLs never reach the
-   on-disk instance state and a private session never survives process death.
-   A render-process crash (`onRenderProcessGone`) rebuilds the WebView via a
-   `webViewEpoch` key instead of letting the platform kill the app process.
+   only. **A mode switch** also rebuilds the WebView, and a switch *back to
+   normal* restores the normal session — but from a **separate, in-memory**
+   snapshot (`NormalHistoryHolder`), taken in `onTogglePrivate` when leaving
+   normal and never written to disk. Switching *into* private always opens the
+   homepage. Both restore sources flow through `FirstLoadRouter` (disk on the
+   first composition, the in-memory normal snapshot on a later switch); the
+   caller picks the bundle by `firstComposition`. **A private session is never
+   persisted, in memory or on disk**: the disk saver skips `saveState` while
+   `isPrivate`, `onTogglePrivate` only snapshots when leaving *normal*, and
+   every restore branch is gated on `!isPrivate` — so private URLs never reach
+   instance state and a private session never survives a mode switch or process
+   death. A render-process crash (`onRenderProcessGone`) rebuilds the WebView
+   via a `webViewEpoch` key instead of letting the platform kill the app
+   process.
 6. **Non-WebView schemes go to other apps:** the WebView only loads
    `http`/`https`/`about`. `web/ExternalScheme` intercepts everything else
    (`mailto:`, `tel:`, `intent:`, app deep links) — both in-page link taps

@@ -134,6 +134,19 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/**
+ * Non-snapshot holder for the normal session's serialized history, kept IN
+ * MEMORY across a mode switch only. Switching into private mode rebuilds (and
+ * destroys) the normal WebView; this lets a later switch back to normal restore
+ * the page + back/forward stack. Deliberately NOT [rememberSaveable]: it must
+ * never reach disk (process death uses the separate, size-capped history saver),
+ * and a private session is never captured here. A plain holder rather than a
+ * Compose state — it's only read/written from callbacks, never during layout.
+ */
+private class NormalHistoryHolder {
+    var bundle: Bundle? = null
+}
+
 /** Size of [bundle] once marshalled, used to keep the persisted history bounded. */
 private fun marshalledSize(bundle: Bundle): Int {
     val parcel = Parcel.obtain()
@@ -202,6 +215,11 @@ fun BrowserScreen(
     // and its captures are cleared in the DisposableEffect(webView) below.
     val captureWebViews = remember { mutableSetOf<WebView>() }
 
+    // In-memory snapshot of the normal session, taken when the user switches into
+    // private mode and restored when they switch back (see onTogglePrivate + the
+    // first-load effect). Never written to disk; private is never captured.
+    val normalHistory = remember { NormalHistoryHolder() }
+
     // One WebView per mode (and per renderer-crash epoch): switching modes
     // recreates it bound to the other profile (normal = persistent default,
     // private = isolated, session-only).
@@ -253,13 +271,15 @@ fun BrowserScreen(
         },
     ) { mutableStateOf<Bundle?>(null) }
 
-    // True only on the very first composition (including after process death),
-    // so a mode switch — which also rebuilds the WebView — never restores the
-    // other profile's old history.
+    // True only on the very first composition (including after process death).
+    // It distinguishes the two restore sources: disk history on the first
+    // composition, the in-memory normal snapshot on a later mode switch. A
+    // private session is never restored from either.
     var firstComposition by remember { mutableStateOf(true) }
 
-    // First load for this WebView: an inbound link if we were launched from
-    // one, else restored history (process-death only), else the homepage.
+    // First load for this WebView: an inbound link if we were launched from one,
+    // else restored history (disk on first composition, the in-memory normal
+    // snapshot when switching back from private), else the homepage.
     // pendingInitialUrl is consumed once so later WebViews (mode switch) don't
     // reopen it.
     var pendingInitialUrl by rememberSaveable { mutableStateOf(initialUrl) }
@@ -275,6 +295,7 @@ fun BrowserScreen(
                 firstComposition = firstComposition,
                 isPrivate = isPrivate,
                 hasSavedHistory = savedHistory != null,
+                hasNormalModeHistory = normalHistory.bundle != null,
             )
             when (action) {
                 is FirstLoadAction.LoadInWebView -> webView.loadUrl(action.url)
@@ -295,9 +316,15 @@ fun BrowserScreen(
 
                 // restoreState rebuilds the history synchronously; mirror the
                 // back/forward list into the chrome now, before the restored
-                // page's first callback. If it fails, fall back to the homepage.
-                FirstLoadAction.RestoreHistory ->
-                    if (savedHistory != null && webView.restoreState(savedHistory!!) != null) {
+                // page's first callback. The source is the disk bundle on the
+                // first composition (process death), else the in-memory normal
+                // snapshot (switching back from private). If it fails, fall back
+                // to the homepage.
+                FirstLoadAction.RestoreHistory -> {
+                    val restoreBundle = if (firstComposition) savedHistory else normalHistory.bundle
+                    // Consume the in-memory snapshot so it can't restore twice.
+                    if (!firstComposition) normalHistory.bundle = null
+                    if (restoreBundle != null && webView.restoreState(restoreBundle) != null) {
                         viewModel.onHistoryRestored(
                             webView.url,
                             webView.canGoBack(),
@@ -306,6 +333,7 @@ fun BrowserScreen(
                     } else {
                         webView.loadUrl(UrlNormalizer.HOME_URL)
                     }
+                }
             }
             firstComposition = false
         }
@@ -424,6 +452,14 @@ fun BrowserScreen(
                 },
                 onTogglePrivate = {
                     val next = !isPrivate
+                    // Leaving normal mode: snapshot its history (in memory) on the
+                    // still-live WebView before it's rebuilt, so switching back
+                    // restores the page + back/forward stack. A private session is
+                    // never captured — it always reopens the homepage.
+                    if (!isPrivate) {
+                        val bundle = Bundle()
+                        normalHistory.bundle = bundle.takeIf { webView.saveState(it) != null }
+                    }
                     isPrivate = next
                     settings.privateMode = next
                 },
