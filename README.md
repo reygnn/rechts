@@ -18,9 +18,18 @@ no settings.
 
 ## Privacy
 
-Out of the box: JavaScript on (the modern web needs it), first-party cookies
-allowed, **third-party cookies blocked**, and web content can't reach the
-device's file system. Search defaults to DuckDuckGo.
+**Private by default.** Cookies, web storage (localStorage), the HTTP cache and
+history are wiped both on a fresh launch and when you close the app — nothing
+from a browsing session survives it. Within a session, first-party cookies and
+DOM storage work normally so sites stay logged in; they just don't outlive the
+session.
+
+On top of that: JavaScript on (the modern web needs it), **third-party cookies
+blocked**, web content can't reach the device's file system, and app data is
+excluded from cloud backup. Search defaults to DuckDuckGo.
+
+Note: a configuration change (e.g. rotation) does *not* wipe the session — only
+genuinely leaving the app does.
 
 ## Build & run
 

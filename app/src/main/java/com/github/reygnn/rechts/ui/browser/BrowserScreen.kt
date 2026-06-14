@@ -1,5 +1,6 @@
 package com.github.reygnn.rechts.ui.browser
 
+import android.app.Activity
 import android.graphics.Bitmap
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
@@ -60,6 +61,7 @@ fun BrowserScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val activity = context as? Activity
     val focusManager = LocalFocusManager.current
 
     // The WebView is created once and survives recomposition. It is the source
@@ -104,7 +106,15 @@ fun BrowserScreen(
     BackHandler(enabled = state.canGoBack) { webView.goBack() }
 
     DisposableEffect(Unit) {
-        onDispose { webView.destroy() }
+        onDispose {
+            // Private by default: when the user is actually leaving (not a
+            // configuration change), wipe cookies, web storage, cache and
+            // history so nothing from this session survives.
+            if (activity?.isFinishing == true) {
+                WebViewConfig.clearAll(webView)
+            }
+            webView.destroy()
+        }
     }
 
     Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->

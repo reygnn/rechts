@@ -83,6 +83,12 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
 3. **Privacy defaults are load-bearing, not incidental:** JavaScript on,
    first-party cookies on, **third-party cookies off**, no file/content
    access. Live in `WebViewConfig`. Don't loosen them without a reason.
+   **Private by default:** the session is wiped (cookies, web storage, cache,
+   history) on a cold launch (`MainActivity.onCreate`, guarded by
+   `savedInstanceState == null`) and on real exit (`BrowserScreen`'s
+   `onDispose` when `activity.isFinishing`). A config-change recreation must
+   NOT wipe — that's why both checks exist. Wiping lives in
+   `WebViewConfig.clearAll` / `clearCookiesAndStorage`.
 4. **DuckDuckGo is the search + home default** (privacy-friendly). Single
    source of truth: `UrlNormalizer.HOME_URL`; the search endpoint
    (`SEARCH_PREFIX`) is derived from it and `BrowserScreen` reads
