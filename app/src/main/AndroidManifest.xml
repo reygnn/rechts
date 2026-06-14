@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- usesCleartextTraffic: a general-purpose browser must reach the plain
+         http sites (and localhost) the user navigates to, so cleartext can't be
+         disabled globally. This is a deliberate browser requirement, not an
+         oversight; https stays the default and third-party cookies remain
+         blocked (WebViewConfig). -->
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

@@ -65,6 +65,24 @@ object ExternalScheme {
         }
     }
 
+    /**
+     * The page an `intent:` URL wants opened when no app can handle it. An
+     * `intent:` link commonly carries an `S.browser_fallback_url` extra (a web
+     * page to visit if the target app is absent); after a failed [dispatch] the
+     * caller loads it instead of leaving the user on a dead tap.
+     *
+     * Returns the fallback only when it is an `http(s)`/`about` URL the WebView
+     * can load itself (so a hostile fallback can't smuggle another external
+     * scheme back in), else `null`. Non-`intent:` URLs have no fallback.
+     */
+    fun fallbackUrl(url: String): String? {
+        if (!url.startsWith("intent:", ignoreCase = true)) return null
+        val fallback = runCatching {
+            Intent.parseUri(url, Intent.URI_INTENT_SCHEME).getStringExtra("browser_fallback_url")
+        }.getOrNull() ?: return null
+        return fallback.takeIf { isInternal(it) }
+    }
+
     private fun buildIntent(url: String, fromWebContent: Boolean): Intent {
         // `intent:` URLs carry a full intent description; parse it, but strip
         // the component/selector so a hostile page can't target an internal,

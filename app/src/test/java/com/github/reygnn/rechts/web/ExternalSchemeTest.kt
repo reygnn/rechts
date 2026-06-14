@@ -7,8 +7,9 @@ import org.junit.Test
 /**
  * Only [ExternalScheme.isInternal] is unit-tested: it is pure string logic and
  * decides whether a URL is loaded by the WebView or handed to another app.
- * [ExternalScheme.dispatch] needs the Android runtime (Intent dispatch) and is
- * left to manual/instrumented verification, like the rest of `web/`.
+ * [ExternalScheme.dispatch] and [ExternalScheme.fallbackUrl] need the Android
+ * runtime (`Intent` parsing/dispatch) and are left to manual/instrumented
+ * verification, like the rest of `web/`.
  */
 class ExternalSchemeTest {
 

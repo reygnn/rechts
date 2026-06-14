@@ -125,4 +125,28 @@ class UrlNormalizerTest {
         val result = UrlNormalizer.toUrlOrSearch("example.")
         assertTrue(result!!.startsWith("https://duckduckgo.com/?q="))
     }
+
+    @Test
+    fun `numeric dotted token that is not a valid ipv4 is a search`() {
+        // "3.14" looks host-shaped (interior dot) but is far more likely a
+        // number the user wants to search than a site → search, not https://3.14.
+        assertTrue(UrlNormalizer.toUrlOrSearch("3.14")!!.startsWith("https://duckduckgo.com/?q="))
+        assertTrue(UrlNormalizer.toUrlOrSearch("1.000")!!.startsWith("https://duckduckgo.com/?q="))
+        // Too many octets, or an out-of-range octet, is not an IPv4 either.
+        assertTrue(UrlNormalizer.toUrlOrSearch("1.2.3.4.5")!!.startsWith("https://duckduckgo.com/?q="))
+        assertTrue(UrlNormalizer.toUrlOrSearch("256.1.1.1")!!.startsWith("https://duckduckgo.com/?q="))
+    }
+
+    @Test
+    fun `valid ipv4 is still treated as a host`() {
+        assertEquals("https://8.8.8.8", UrlNormalizer.toUrlOrSearch("8.8.8.8"))
+        assertEquals("https://0.0.0.0", UrlNormalizer.toUrlOrSearch("0.0.0.0"))
+    }
+
+    @Test
+    fun `ipv6 literal is treated as a host`() {
+        assertEquals("https://[::1]", UrlNormalizer.toUrlOrSearch("[::1]"))
+        assertEquals("https://[fe80::1]:8080", UrlNormalizer.toUrlOrSearch("[fe80::1]:8080"))
+        assertEquals("https://[::1]/path", UrlNormalizer.toUrlOrSearch("[::1]/path"))
+    }
 }

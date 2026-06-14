@@ -64,14 +64,20 @@ object UrlNormalizer {
         // A host never contains whitespace; if it does, it's a search query.
         if (input.any { it.isWhitespace() }) return false
 
-        // Reduce to the host: drop fragment, query, path, then userinfo. A '#'
-        // can legally precede '/' and '?', so it must be stripped first.
-        val host = input
+        // Reduce to the authority: drop fragment, query, path, then userinfo. A
+        // '#' can legally precede '/' and '?', so it must be stripped first.
+        val authority = input
             .substringBefore('#')
             .substringBefore('?')
             .substringBefore('/')
             .substringAfterLast('@')
-            .substringBefore(':')   // drop the port
+
+        // IPv6 literal: "[::1]", "[fe80::1]:8080". The brackets disambiguate the
+        // colons, so the port-stripping below would mangle it — treat any
+        // bracketed authority as a host directly.
+        if (authority.startsWith('[')) return authority.contains(']')
+
+        val host = authority.substringBefore(':')   // drop the port
 
         // localhost (with or without a port) is a valid host without a dot.
         if (host.equals("localhost", ignoreCase = true)) return true
@@ -79,6 +85,21 @@ object UrlNormalizer {
         // Otherwise require an interior dot: "a.b" is a host, ".com"/"foo." are not.
         if (!host.contains('.')) return false
         if (host.startsWith('.') || host.endsWith('.')) return false
+
+        // A purely numeric dotted token ("3.14") is a host only if it is a valid
+        // IPv4 address; otherwise it's far more likely a number the user wants to
+        // search for than a site to visit. Real browsers do the same.
+        if (host.all { it.isDigit() || it == '.' }) return isIpv4(host)
         return true
+    }
+
+    /** True for a dotted-quad in range, e.g. "192.168.0.1" but not "3.14" or "256.0.0.1". */
+    private fun isIpv4(host: String): Boolean {
+        val octets = host.split('.')
+        if (octets.size != 4) return false
+        return octets.all { octet ->
+            val n = octet.toIntOrNull()
+            n != null && n in 0..255
+        }
     }
 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.view.ViewGroup
@@ -96,6 +97,9 @@ import com.github.reygnn.rechts.web.WebViewConfig
 
 private const val TAG = "BrowserScreen"
 
+/** Minimum spacing between repeated "unsupported" toasts (download / file upload). */
+private const val UNSUPPORTED_TOAST_MIN_INTERVAL_MS = 3_000L
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -176,8 +180,9 @@ fun BrowserScreen(
                     if (ExternalScheme.isInternal(inbound)) {
                         webView.loadUrl(inbound)
                     } else {
-                        ExternalScheme.dispatch(context, inbound)
-                        webView.loadUrl(UrlNormalizer.HOME_URL)
+                        val handled = ExternalScheme.dispatch(context, inbound)
+                        val fallback = if (handled) null else ExternalScheme.fallbackUrl(inbound)
+                        webView.loadUrl(fallback ?: UrlNormalizer.HOME_URL)
                     }
 
                 // Process-death restore — normal mode only. A private session is
@@ -203,8 +208,13 @@ fun BrowserScreen(
     // WebView, everything else (mailto:, tel:, …) off to another app.
     LaunchedEffect(webView) {
         viewModel.loadRequests.collect { url ->
-            if (ExternalScheme.isInternal(url)) webView.loadUrl(url)
-            else ExternalScheme.dispatch(context, url)
+            when {
+                ExternalScheme.isInternal(url) -> webView.loadUrl(url)
+                // Typed input is an explicit user action, so no gesture gate; if
+                // no app handles it, honour an intent: fallback page.
+                !ExternalScheme.dispatch(context, url) ->
+                    ExternalScheme.fallbackUrl(url)?.let(webView::loadUrl)
+            }
         }
     }
 
@@ -300,7 +310,18 @@ private fun createBrowserWebView(
     viewModel: BrowserViewModel,
     privateMode: Boolean,
     onRenderGone: () -> Unit,
-): WebView = WebView(context).apply {
+): WebView {
+    // Cheap throttle shared by the download + file-upload notices so a hostile
+    // page that auto-fires either in a loop can't flood the screen with toasts.
+    var lastUnsupportedNoticeAt = 0L
+    fun notifyUnsupported(ctx: Context, messageRes: Int) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastUnsupportedNoticeAt < UNSUPPORTED_TOAST_MIN_INTERVAL_MS) return
+        lastUnsupportedNoticeAt = now
+        Toast.makeText(ctx, messageRes, Toast.LENGTH_SHORT).show()
+    }
+
+    return WebView(context).apply {
     layoutParams = ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -315,7 +336,18 @@ private fun createBrowserWebView(
         ): Boolean {
             val url = request.url.toString()
             if (ExternalScheme.isInternal(url)) return false
-            ExternalScheme.dispatch(view.context, url, fromWebContent = true)
+            // Only honour external-app launches the user actually triggered. A
+            // page must not be able to silently fling the user into another app
+            // via a hidden iframe or an auto-redirect to intent:/market:/tel:
+            // with no user gesture (matching Chrome). Swallow it and stay put.
+            if (!request.hasGesture()) {
+                Log.d(TAG, "Ignoring gesture-less external navigation: $url")
+                return true
+            }
+            // No app handled it → fall back to the page the intent: author named.
+            if (!ExternalScheme.dispatch(view.context, url, fromWebContent = true)) {
+                ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
+            }
             return true
         }
 
@@ -369,8 +401,7 @@ private fun createBrowserWebView(
             fileChooserParams: FileChooserParams,
         ): Boolean {
             filePathCallback.onReceiveValue(null)
-            Toast.makeText(webView.context, R.string.file_upload_unsupported, Toast.LENGTH_SHORT)
-                .show()
+            notifyUnsupported(webView.context, R.string.file_upload_unsupported)
             return true
         }
     }
@@ -378,11 +409,12 @@ private fun createBrowserWebView(
     // Downloads are out of scope (CLAUDE.md). Don't fail silently on a download
     // link — let the user know nothing will happen.
     setDownloadListener { _, _, _, _, _ ->
-        Toast.makeText(context, R.string.download_unsupported, Toast.LENGTH_SHORT).show()
+        notifyUnsupported(context, R.string.download_unsupported)
     }
 
     // Bind the profile (private vs default) BEFORE the WebView loads anything.
     WebViewConfig.apply(this, privateMode)
+    }
 }
 
 @Composable
