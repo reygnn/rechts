@@ -1,0 +1,71 @@
+package com.github.reygnn.rechts.web
+
+import android.content.Intent
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+
+/**
+ * Pins the security-relevant hardening in [ExternalScheme.dispatch]: it builds
+ * the external `ACTION_VIEW` / `intent:` intent and is the gate that hands web
+ * links off to other apps (CLAUDE.md hard rules 6/7).
+ *
+ * Robolectric doesn't resolve activities — `startActivity` just records the
+ * intent — so we assert on the *built* intent via `ShadowApplication`, not on
+ * whether an app actually launched (that stays manual/instrumented).
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
+class ExternalSchemeDispatchTest {
+
+    private val app = RuntimeEnvironment.getApplication()
+
+    private fun lastLaunched(): Intent? = shadowOf(app).nextStartedActivity
+
+    @Test
+    fun `intent url is stripped of component and selector and forced BROWSABLE`() {
+        // A hostile intent: that tries to target an internal component must not
+        // be honoured: component/selector cleared, BROWSABLE required, NEW_TASK
+        // set so it launches from a non-activity context.
+        val url = "intent://evil/#Intent;scheme=foo;" +
+            "component=com.victim/.SecretActivity;end"
+        assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+
+        val launched = lastLaunched()!!
+        assertNull("component must be cleared", launched.component)
+        assertNull("selector must be cleared", launched.selector)
+        assertTrue("BROWSABLE must be present", launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+        assertTrue(
+            "NEW_TASK must be set",
+            launched.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0,
+        )
+    }
+
+    @Test
+    fun `web-content view launch requires BROWSABLE`() {
+        // A page-initiated launch only matches activities that opted into being
+        // triggered from the web.
+        assertTrue(ExternalScheme.dispatch(app, "tel:+49123", fromWebContent = true))
+        val launched = lastLaunched()!!
+        assertEquals(Intent.ACTION_VIEW, launched.action)
+        assertEquals("tel:+49123", launched.dataString)
+        assertTrue(launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+    }
+
+    @Test
+    fun `typed-input view launch keeps the broader match without BROWSABLE`() {
+        // Typed input is an explicit user action, so handlers that don't declare
+        // BROWSABLE (e.g. some tel:/mailto: apps) still resolve.
+        assertTrue(ExternalScheme.dispatch(app, "tel:+49123", fromWebContent = false))
+        val launched = lastLaunched()!!
+        assertEquals(Intent.ACTION_VIEW, launched.action)
+        assertFalse(launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+    }
+}

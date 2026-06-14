@@ -23,6 +23,7 @@ ui/browser/
 web/
   ExternalSchemeTest.kt         — pure: isInternal + decideWebContentNavigation (gesture gate)
   ExternalSchemeFallbackTest.kt — Robolectric: intent: browser_fallback_url parsing
+  ExternalSchemeDispatchTest.kt — Robolectric: dispatch intent hardening (component/selector/BROWSABLE)
 util/
   MainDispatcherRule.kt         — sets Dispatchers.Main = UnconfinedTestDispatcher
 ```
