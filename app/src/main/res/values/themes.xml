@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Functional pre-Compose window theme only (splash / edge-to-edge
+        background). Compose paints all UI after setContent {}, so this stays
+        a lean platform theme — no Material/AppCompat parent needed.
+        See MATERIAL3RULES A1.
+    -->
+    <style name="Theme.Rechts" parent="@android:style/Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>

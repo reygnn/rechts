@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">rechts</string>
+
+    <!-- Address bar -->
+    <string name="address_hint">Enter URL or search</string>
+    <string name="address_clear">Clear input</string>
+
+    <!-- Navigation controls -->
+    <string name="nav_back">Back</string>
+    <string name="nav_forward">Forward</string>
+    <string name="nav_reload">Reload</string>
+    <string name="nav_stop">Stop loading</string>
+</resources>
