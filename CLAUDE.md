@@ -63,7 +63,7 @@ com.github.reygnn.rechts/
   ui/
     MainActivity.kt              — ComponentActivity (singleTask), edge-to-edge, hosts BrowserScreen; wipes private profile on cold start; routes inbound VIEW intents (onCreate + onNewIntent)
     browser/
-      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); overflow menu (private toggle, set-default); wires WebViewClient/ChromeClient → VM
+      BrowserScreen.kt           — Compose chrome + AndroidView(WebView); overflow menu (back/forward/reload row, private toggle, set-default); wires WebViewClient/ChromeClient → VM
       BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests (also openExternalUrl for inbound links)
       BrowserUiState.kt          — chrome state (address, progress, history flags)
     theme/                       — RechtsTheme, static teal Color palette

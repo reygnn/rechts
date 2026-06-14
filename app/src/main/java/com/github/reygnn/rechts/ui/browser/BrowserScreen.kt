@@ -22,6 +22,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -449,12 +451,6 @@ private fun BrowserChrome(
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack, enabled = state.canGoBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.nav_back))
-                }
-                IconButton(onClick = onForward, enabled = state.canGoForward) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.nav_forward))
-                }
                 AddressField(
                     value = state.addressText,
                     isPrivate = isPrivate,
@@ -464,15 +460,13 @@ private fun BrowserChrome(
                     onSubmit = onAddressSubmit,
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = onReloadOrStop) {
-                    if (state.isLoading) {
-                        Icon(Icons.Filled.Close, stringResource(R.string.nav_stop))
-                    } else {
-                        Icon(Icons.Filled.Refresh, stringResource(R.string.nav_reload))
-                    }
-                }
+                // Back / forward / reload-stop live inside the overflow menu now.
                 OverflowMenu(
+                    state = state,
                     isPrivate = isPrivate,
+                    onBack = onBack,
+                    onForward = onForward,
+                    onReloadOrStop = onReloadOrStop,
                     onTogglePrivate = onTogglePrivate,
                     onSetDefaultBrowser = onSetDefaultBrowser,
                 )
@@ -495,7 +489,11 @@ private fun BrowserChrome(
 
 @Composable
 private fun OverflowMenu(
+    state: BrowserUiState,
     isPrivate: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onReloadOrStop: () -> Unit,
     onTogglePrivate: () -> Unit,
     onSetDefaultBrowser: () -> Unit,
 ) {
@@ -505,6 +503,35 @@ private fun OverflowMenu(
             Icon(Icons.Filled.MoreVert, stringResource(R.string.menu_more))
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            // Back / forward / reload-stop, arranged horizontally at the top.
+            // Each closes the menu and acts (navigation leaves the menu anyway).
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                IconButton(
+                    onClick = { expanded = false; onBack() },
+                    enabled = state.canGoBack,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.nav_back))
+                }
+                IconButton(
+                    onClick = { expanded = false; onForward() },
+                    enabled = state.canGoForward,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.nav_forward))
+                }
+                IconButton(onClick = { expanded = false; onReloadOrStop() }) {
+                    if (state.isLoading) {
+                        Icon(Icons.Filled.Close, stringResource(R.string.nav_stop))
+                    } else {
+                        Icon(Icons.Filled.Refresh, stringResource(R.string.nav_reload))
+                    }
+                }
+            }
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.menu_private_mode)) },
                 onClick = {
