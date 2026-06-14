@@ -100,10 +100,11 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    Switching mode rebuilds the WebView on the other profile — that's why the
    WebView is `remember(isPrivate)` and the `AndroidView` sits in `key(webView)`.
    The chosen mode persists via `SettingsStore` (SharedPreferences).
-4. **DuckDuckGo is the search + home default** (privacy-friendly). Single
-   source of truth: `UrlNormalizer.HOME_URL`; the search endpoint
-   (`SEARCH_PREFIX`) is derived from it and `BrowserScreen` reads
-   `UrlNormalizer.HOME_URL` for the homepage. Change it in one place.
+4. **DuckDuckGo is the default** (privacy-friendly), but homepage and search
+   are deliberately two endpoints: `UrlNormalizer.HOME_URL` =
+   `start.duckduckgo.com` (tidier start page, used by `BrowserScreen`),
+   `UrlNormalizer.SEARCH_PREFIX` = `duckduckgo.com/?q=` (canonical results
+   page). Both live in `UrlNormalizer`.
 5. **The Activity handles configuration changes itself** via
    `android:configChanges` (orientation, resize, dark mode, font scale,
    locale, …). That keeps the live WebView — and its open page, scroll

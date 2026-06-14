@@ -23,11 +23,11 @@ import java.net.URLEncoder
  */
 object UrlNormalizer {
 
-    /** Privacy-friendly default search engine and homepage. */
-    const val HOME_URL = "https://duckduckgo.com"
+    /** Privacy-friendly default homepage (the tidier DuckDuckGo start page). */
+    const val HOME_URL = "https://start.duckduckgo.com/"
 
-    /** Search endpoint, derived from [HOME_URL] so the two never diverge. */
-    private const val SEARCH_PREFIX = "$HOME_URL/?q="
+    /** Privacy-friendly search endpoint (canonical DuckDuckGo results page). */
+    private const val SEARCH_PREFIX = "https://duckduckgo.com/?q="
 
     /** A `scheme://rest` URL, e.g. `https://…`, `http://…`, `file://…`. */
     private val HIERARCHICAL_SCHEME = Regex("^[a-zA-Z][a-zA-Z0-9+.\\-]*://.*")
