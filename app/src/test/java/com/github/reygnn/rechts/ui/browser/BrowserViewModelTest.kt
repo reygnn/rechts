@@ -158,4 +158,57 @@ class BrowserViewModelTest {
         vm.onAddressFocusChanged(false)
         assertEquals("https://example.com", vm.uiState.value.addressText)
     }
+
+    @Test
+    fun `the blur after a submit keeps the entry, not the old page url`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageFinished("https://old.example", canGoBack = false, canGoForward = false)
+            vm.loadRequests.test {
+                vm.onAddressFocusChanged(true)
+                vm.onAddressChange("new.example")
+                vm.onAddressSubmit()
+                assertEquals("https://new.example", awaitItem())
+                // The UI clears focus right after submit; that blur must NOT
+                // restore the previous page's URL (would flash before the load).
+                vm.onAddressFocusChanged(false)
+                assertEquals("new.example", vm.uiState.value.addressText)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `a blank submit does not suppress the next blur restore`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+            vm.onAddressFocusChanged(true)
+            vm.onAddressChange("   ")
+            vm.onAddressSubmit()                 // blank → no load, no suppression
+            vm.onAddressFocusChanged(false)
+            assertEquals("https://example.com", vm.uiState.value.addressText)
+        }
+
+    @Test
+    fun `onHistoryRestored mirrors url and history flags`() = runTest(mainRule.dispatcher) {
+        val vm = BrowserViewModel()
+        vm.onHistoryRestored("https://restored.example", canGoBack = true, canGoForward = false)
+        val state = vm.uiState.value
+        assertEquals("https://restored.example", state.currentUrl)
+        assertEquals("https://restored.example", state.addressText)
+        assertTrue(state.canGoBack)
+        assertFalse(state.canGoForward)
+    }
+
+    @Test
+    fun `onHistoryRestored with a null url keeps existing text`() = runTest(mainRule.dispatcher) {
+        val vm = BrowserViewModel()
+        vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+        vm.onHistoryRestored(null, canGoBack = true, canGoForward = true)
+        val state = vm.uiState.value
+        assertEquals("https://example.com", state.currentUrl)
+        assertEquals("https://example.com", state.addressText)
+        assertTrue(state.canGoBack)
+        assertTrue(state.canGoForward)
+    }
 }

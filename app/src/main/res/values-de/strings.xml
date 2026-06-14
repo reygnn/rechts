@@ -19,4 +19,8 @@
 
     <!-- Private mode indicator (address bar) -->
     <string name="private_active">Privater Modus aktiv</string>
+
+    <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
+    <string name="download_unsupported">Downloads werden nicht unterstützt</string>
+    <string name="file_upload_unsupported">Datei-Upload wird nicht unterstützt</string>
 </resources>

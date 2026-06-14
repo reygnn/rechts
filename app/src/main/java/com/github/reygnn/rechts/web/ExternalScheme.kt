@@ -34,9 +34,17 @@ object ExternalScheme {
      * Tries to open [url] in another app. Returns `true` if an app was
      * launched, `false` if nothing could handle it (the caller then simply
      * stays on the current page rather than showing an error).
+     *
+     * Set [fromWebContent] for navigations initiated by the loaded page (a link
+     * tap / JS redirect) as opposed to text the user typed: web-initiated
+     * `ACTION_VIEW` launches then additionally require `BROWSABLE`, so only
+     * activities that opted into being triggered from the web are matched
+     * (matching Chrome). Typed input is an explicit user action and keeps the
+     * broader match, so e.g. `tel:`/`mailto:` handlers that don't declare
+     * `BROWSABLE` still resolve.
      */
-    fun dispatch(context: Context, url: String): Boolean {
-        val intent = runCatching { buildIntent(url) }.getOrElse {
+    fun dispatch(context: Context, url: String, fromWebContent: Boolean = false): Boolean {
+        val intent = runCatching { buildIntent(url, fromWebContent) }.getOrElse {
             Log.w(TAG, "Could not parse external URL: $url", it)
             return false
         }
@@ -46,10 +54,18 @@ object ExternalScheme {
         } catch (e: ActivityNotFoundException) {
             Log.w(TAG, "No app to handle: $url", e)
             false
+        } catch (e: RuntimeException) {
+            // startActivity throws more than ActivityNotFoundException: a file://
+            // target raises FileUriExposedException (StrictMode), and a resolved
+            // activity that needs a permission rechts lacks raises
+            // SecurityException. A bad scheme must never crash the browser —
+            // stay on the current page instead.
+            Log.w(TAG, "Could not launch external app for: $url", e)
+            false
         }
     }
 
-    private fun buildIntent(url: String): Intent {
+    private fun buildIntent(url: String, fromWebContent: Boolean): Intent {
         // `intent:` URLs carry a full intent description; parse it, but strip
         // the component/selector so a hostile page can't target an internal,
         // non-exported activity, and require BROWSABLE so only intents meant
@@ -61,7 +77,9 @@ object ExternalScheme {
                 selector = null
             }
         } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                if (fromWebContent) addCategory(Intent.CATEGORY_BROWSABLE)
+            }
         }
         return intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }

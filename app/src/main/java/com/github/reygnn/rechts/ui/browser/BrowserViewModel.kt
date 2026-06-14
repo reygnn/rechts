@@ -35,6 +35,14 @@ class BrowserViewModel : ViewModel() {
     /** True while the user is editing the address bar — page events then leave it alone. */
     private var addressBarFocused = false
 
+    /**
+     * Set when a submit just fired a load. The blur that follows
+     * [onAddressSubmit] (the UI clears focus) must then NOT restore the old
+     * page URL, or the previous URL would flash for a frame before the new
+     * page's [onPageStarted] arrives. Consumed by the next [onAddressFocusChanged].
+     */
+    private var submitInFlight = false
+
     // ── User input ────────────────────────────────────────────────────────
 
     fun onAddressChange(text: String) {
@@ -47,13 +55,19 @@ class BrowserViewModel : ViewModel() {
 
     fun onAddressFocusChanged(focused: Boolean) {
         addressBarFocused = focused
-        // Abandoning an edit (blur without submit) restores the real page URL.
-        if (!focused) _uiState.update { it.copy(addressText = it.currentUrl) }
+        if (!focused) {
+            // A blur right after a submit must leave the entry alone — the
+            // imminent page load updates the bar. Otherwise (blur abandoning an
+            // edit) restore the real page URL.
+            if (submitInFlight) submitInFlight = false
+            else _uiState.update { it.copy(addressText = it.currentUrl) }
+        }
     }
 
     /** Normalize the address-bar text and request a load. No-op if blank. */
     fun onAddressSubmit() {
         val target = UrlNormalizer.toUrlOrSearch(_uiState.value.addressText) ?: return
+        submitInFlight = true
         _loadRequests.trySend(target)
     }
 
@@ -64,6 +78,24 @@ class BrowserViewModel : ViewModel() {
      */
     fun openExternalUrl(url: String) {
         _loadRequests.trySend(url)
+    }
+
+    /**
+     * Mirror a back/forward list brought back by `WebView.restoreState` (process
+     * death only). restoreState rebuilds the history synchronously, so push its
+     * flags into the chrome now — otherwise [canGoBack] stays `false` until the
+     * restored page's first callback and the system Back button would leave the
+     * app instead of going back.
+     */
+    fun onHistoryRestored(url: String?, canGoBack: Boolean, canGoForward: Boolean) {
+        _uiState.update {
+            it.copy(
+                currentUrl = url ?: it.currentUrl,
+                addressText = url ?: it.addressText,
+                canGoBack = canGoBack,
+                canGoForward = canGoForward,
+            )
+        }
     }
 
     // ── WebView callbacks ─────────────────────────────────────────────────

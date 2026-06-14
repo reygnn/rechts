@@ -4,9 +4,11 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -69,6 +71,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
@@ -126,7 +131,15 @@ fun BrowserScreen(
             when {
                 inbound != null -> webView.loadUrl(inbound)
                 firstComposition && savedHistory != null &&
-                    webView.restoreState(savedHistory!!) != null -> Unit // history restored
+                    webView.restoreState(savedHistory!!) != null ->
+                    // History restored: mirror the back/forward list into the
+                    // chrome now, before the restored page's first callback.
+                    viewModel.onHistoryRestored(
+                        webView.url,
+                        webView.canGoBack(),
+                        webView.canGoForward(),
+                    )
+
                 else -> webView.loadUrl(UrlNormalizer.HOME_URL)
             }
             firstComposition = false
@@ -144,6 +157,23 @@ fun BrowserScreen(
 
     // System back navigates page history before leaving the app.
     BackHandler(enabled = state.canGoBack) { webView.goBack() }
+
+    // Suspend the WebView with the app: AndroidView gives no lifecycle bridge,
+    // so without this a backgrounded page keeps running JS timers and media.
+    // pauseTimers() is what actually stops JS (onPause() alone does not); it is
+    // process-global, which is fine here as only one WebView is ever active.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(webView, lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> { webView.onResume(); webView.resumeTimers() }
+                Lifecycle.Event.ON_PAUSE -> { webView.onPause(); webView.pauseTimers() }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Destroy the WebView when it's replaced (mode switch) or the screen leaves.
     DisposableEffect(webView) {
@@ -226,7 +256,7 @@ private fun createBrowserWebView(
         ): Boolean {
             val url = request.url.toString()
             if (ExternalScheme.isInternal(url)) return false
-            ExternalScheme.dispatch(view.context, url)
+            ExternalScheme.dispatch(view.context, url, fromWebContent = true)
             return true
         }
 
@@ -243,6 +273,25 @@ private fun createBrowserWebView(
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             viewModel.onProgressChanged(newProgress)
         }
+
+        // File upload is out of scope (CLAUDE.md). The default would silently
+        // do nothing; cancel the request cleanly and tell the user instead.
+        override fun onShowFileChooser(
+            webView: WebView,
+            filePathCallback: ValueCallback<Array<Uri>>,
+            fileChooserParams: FileChooserParams,
+        ): Boolean {
+            filePathCallback.onReceiveValue(null)
+            Toast.makeText(webView.context, R.string.file_upload_unsupported, Toast.LENGTH_SHORT)
+                .show()
+            return true
+        }
+    }
+
+    // Downloads are out of scope (CLAUDE.md). Don't fail silently on a download
+    // link — let the user know nothing will happen.
+    setDownloadListener { _, _, _, _, _ ->
+        Toast.makeText(context, R.string.download_unsupported, Toast.LENGTH_SHORT).show()
     }
 
     // Bind the profile (private vs default) BEFORE the WebView loads anything.
