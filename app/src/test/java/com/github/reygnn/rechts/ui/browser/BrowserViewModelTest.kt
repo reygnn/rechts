@@ -211,6 +211,29 @@ class BrowserViewModelTest {
         }
 
     @Test
+    fun `onExternalHandoff restores the address bar to the current page url`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+            // User typed an external scheme and submitted; it was handed off to
+            // another app, so no page load re-syncs the bar.
+            vm.onAddressChange("mailto:a@b.com")
+            vm.onExternalHandoff()
+            assertEquals("https://example.com", vm.uiState.value.addressText)
+        }
+
+    @Test
+    fun `onExternalHandoff leaves the entry alone while the user is editing`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageFinished("https://example.com", canGoBack = false, canGoForward = false)
+            vm.onAddressFocusChanged(true)
+            vm.onAddressChange("tel:123")
+            vm.onExternalHandoff()
+            assertEquals("tel:123", vm.uiState.value.addressText)
+        }
+
+    @Test
     fun `onHistoryRestored mirrors url and history flags`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onHistoryRestored("https://restored.example", canGoBack = true, canGoForward = false)

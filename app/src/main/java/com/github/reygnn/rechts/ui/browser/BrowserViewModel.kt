@@ -89,6 +89,18 @@ class BrowserViewModel : ViewModel() {
     }
 
     /**
+     * A typed address-bar entry was handed off to another app (an external
+     * scheme like `mailto:`/`tel:`) instead of loading a page. No page load
+     * follows, so no `onPageStarted` will re-sync the bar — do it here, or the
+     * dispatched URI would linger in the address bar over the unchanged page.
+     * Leaves the entry alone if the user is editing it.
+     */
+    fun onExternalHandoff() {
+        if (addressBarFocused) return
+        _uiState.update { it.copy(addressText = it.currentUrl) }
+    }
+
+    /**
      * Mirror a back/forward list brought back by `WebView.restoreState` (process
      * death only). restoreState rebuilds the history synchronously, so push its
      * flags into the chrome now — otherwise [canGoBack] stays `false` until the

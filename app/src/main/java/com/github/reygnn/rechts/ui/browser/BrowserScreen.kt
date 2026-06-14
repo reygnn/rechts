@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Parcel
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
@@ -102,6 +103,25 @@ private const val TAG = "BrowserScreen"
 /** Minimum spacing between repeated "unsupported" toasts (download / file upload). */
 private const val UNSUPPORTED_TOAST_MIN_INTERVAL_MS = 3_000L
 
+/**
+ * Cap on the serialized WebView history we persist across process death. The
+ * Binder transaction that carries saved instance state is bounded (~1 MB shared
+ * across the whole activity), so keep our slice well under it; if a deep history
+ * exceeds this we drop it rather than risk TransactionTooLargeException.
+ */
+private const val MAX_HISTORY_STATE_BYTES = 512 * 1024
+
+/** Size of [bundle] once marshalled, used to keep the persisted history bounded. */
+private fun marshalledSize(bundle: Bundle): Int {
+    val parcel = Parcel.obtain()
+    return try {
+        parcel.writeBundle(bundle)
+        parcel.dataSize()
+    } finally {
+        parcel.recycle()
+    }
+}
+
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -117,7 +137,16 @@ fun BrowserScreen(
     // across configuration changes. Toggling it persists the choice and (via
     // remember(isPrivate) below) rebuilds the WebView on the right profile.
     val settings = remember { SettingsStore(context) }
-    var isPrivate by rememberSaveable { mutableStateOf(settings.privateMode) }
+
+    // Private mode is only real when the platform WebView supports isolated
+    // profiles. Without that, binding "private" browsing to the default profile
+    // would leak it into persistent normal browsing while still showing the lock
+    // icon — a false privacy promise. So treat private mode as unavailable: seed
+    // it off and disable the toggle (below) rather than silently faking it.
+    val privateAvailable = remember { WebViewConfig.multiProfileSupported() }
+    var isPrivate by rememberSaveable {
+        mutableStateOf(settings.privateMode && privateAvailable)
+    }
 
     // Bumped when the render process dies (see onRenderProcessGone); keying the
     // WebView on it forces a fresh instance instead of letting the platform kill
@@ -162,7 +191,16 @@ fun BrowserScreen(
                 // Never persist a private session: writing its URLs into the
                 // on-disk instance state would let private browsing outlive the
                 // app process. Normal browsing snapshots its history as usual.
-                Bundle().also { if (!isPrivate) webView.saveState(it) }
+                Bundle().also { bundle ->
+                    if (!isPrivate) {
+                        webView.saveState(bundle)
+                        // saveState serializes the whole back/forward list; a very
+                        // deep history could blow the ~1 MB Binder transaction
+                        // budget for saved instance state (TransactionTooLargeException).
+                        // Dropping it (→ homepage on restore) beats crashing.
+                        if (marshalledSize(bundle) > MAX_HISTORY_STATE_BYTES) bundle.clear()
+                    }
+                }
 
             override fun restore(value: Bundle): Bundle? = value
         },
@@ -184,37 +222,38 @@ fun BrowserScreen(
             reloadAfterCrash = null
             val inbound = pendingInitialUrl
             pendingInitialUrl = null
-            when {
-                // Renderer was rebuilt after a crash: reopen the page we were on.
-                crashReload != null -> webView.loadUrl(crashReload)
+            val action = FirstLoadRouter.decide(
+                crashReload = crashReload,
+                inbound = inbound,
+                firstComposition = firstComposition,
+                isPrivate = isPrivate,
+                hasSavedHistory = savedHistory != null,
+            )
+            when (action) {
+                is FirstLoadAction.LoadInWebView -> webView.loadUrl(action.url)
 
-                // Inbound link from another app. Route it through the same scheme
-                // gate as every other load — only http(s)/about go into the
-                // WebView; anything else (an explicit intent could carry data:,
-                // javascript:, …) is handed off to another app, not loaded here.
-                inbound != null ->
-                    if (ExternalScheme.isInternal(inbound)) {
-                        webView.loadUrl(inbound)
+                // Hand the inbound link off to another app; on failure honour an
+                // intent: fallback page, else the homepage. (data:/javascript:/app
+                // deep links arrive here, never into the WebView.)
+                is FirstLoadAction.DispatchInbound -> {
+                    val handled = ExternalScheme.dispatch(context, action.url)
+                    val fallback = if (handled) null else ExternalScheme.fallbackUrl(action.url)
+                    webView.loadUrl(fallback ?: UrlNormalizer.HOME_URL)
+                }
+
+                // restoreState rebuilds the history synchronously; mirror the
+                // back/forward list into the chrome now, before the restored
+                // page's first callback. If it fails, fall back to the homepage.
+                FirstLoadAction.RestoreHistory ->
+                    if (savedHistory != null && webView.restoreState(savedHistory!!) != null) {
+                        viewModel.onHistoryRestored(
+                            webView.url,
+                            webView.canGoBack(),
+                            webView.canGoForward(),
+                        )
                     } else {
-                        val handled = ExternalScheme.dispatch(context, inbound)
-                        val fallback = if (handled) null else ExternalScheme.fallbackUrl(inbound)
-                        webView.loadUrl(fallback ?: UrlNormalizer.HOME_URL)
+                        webView.loadUrl(UrlNormalizer.HOME_URL)
                     }
-
-                // Process-death restore — normal mode only. A private session is
-                // never reconstructed from disk-persisted state (the saver above
-                // also refuses to write it).
-                firstComposition && !isPrivate && savedHistory != null &&
-                    webView.restoreState(savedHistory!!) != null ->
-                    // History restored: mirror the back/forward list into the
-                    // chrome now, before the restored page's first callback.
-                    viewModel.onHistoryRestored(
-                        webView.url,
-                        webView.canGoBack(),
-                        webView.canGoForward(),
-                    )
-
-                else -> webView.loadUrl(UrlNormalizer.HOME_URL)
             }
             firstComposition = false
         }
@@ -227,11 +266,15 @@ fun BrowserScreen(
             when {
                 ExternalScheme.isInternal(url) -> webView.loadUrl(url)
                 // Typed input is an explicit user action, so no gesture gate.
-                ExternalScheme.dispatch(context, url) -> Unit
+                // No page load follows a handoff, so re-sync the address bar.
+                ExternalScheme.dispatch(context, url) -> viewModel.onExternalHandoff()
                 // No app handled it: honour an intent: fallback page if any,
                 // otherwise tell the user instead of failing silently.
                 else -> when (val fallback = ExternalScheme.fallbackUrl(url)) {
-                    null -> Toast.makeText(context, R.string.no_app_to_handle, Toast.LENGTH_SHORT).show()
+                    null -> {
+                        Toast.makeText(context, R.string.no_app_to_handle, Toast.LENGTH_SHORT).show()
+                        viewModel.onExternalHandoff()
+                    }
                     else -> webView.loadUrl(fallback)
                 }
             }
@@ -292,6 +335,7 @@ fun BrowserScreen(
             BrowserChrome(
                 state = state,
                 isPrivate = isPrivate,
+                privateAvailable = privateAvailable,
                 onBack = { webView.goBack() },
                 onForward = { webView.goForward() },
                 onReloadOrStop = {
@@ -458,6 +502,7 @@ private fun createBrowserWebView(
 private fun BrowserChrome(
     state: BrowserUiState,
     isPrivate: Boolean,
+    privateAvailable: Boolean,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -497,6 +542,7 @@ private fun BrowserChrome(
                 OverflowMenu(
                     state = state,
                     isPrivate = isPrivate,
+                    privateAvailable = privateAvailable,
                     onBack = onBack,
                     onForward = onForward,
                     onReloadOrStop = onReloadOrStop,
@@ -524,6 +570,7 @@ private fun BrowserChrome(
 private fun OverflowMenu(
     state: BrowserUiState,
     isPrivate: Boolean,
+    privateAvailable: Boolean,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -571,6 +618,9 @@ private fun OverflowMenu(
                     expanded = false
                     onTogglePrivate()
                 },
+                // Disabled when the platform WebView can't isolate profiles —
+                // honest "unavailable" beats a lock icon over non-private browsing.
+                enabled = privateAvailable,
                 leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                 trailingIcon = {
                     if (isPrivate) Icon(Icons.Filled.Check, contentDescription = null)
