@@ -1,5 +1,6 @@
 package com.github.reygnn.rechts.web
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,5 +49,44 @@ class ExternalSchemeTest {
     fun `a string without a scheme is not internal`() {
         // No ':' delimiter → empty scheme → not in the internal set.
         assertFalse(ExternalScheme.isInternal("example.com"))
+    }
+
+    // ── decideWebContentNavigation ────────────────────────────────────────
+
+    @Test
+    fun `internal url is loaded in the webview regardless of gesture`() {
+        assertEquals(
+            ExternalScheme.WebNavigation.LoadInWebView,
+            ExternalScheme.decideWebContentNavigation("https://example.com", gesture = true),
+        )
+        assertEquals(
+            ExternalScheme.WebNavigation.LoadInWebView,
+            ExternalScheme.decideWebContentNavigation("https://example.com", gesture = false),
+        )
+    }
+
+    @Test
+    fun `external scheme with a gesture is dispatched`() {
+        assertEquals(
+            ExternalScheme.WebNavigation.DispatchExternal,
+            ExternalScheme.decideWebContentNavigation("intent://x/#Intent;end", gesture = true),
+        )
+        assertEquals(
+            ExternalScheme.WebNavigation.DispatchExternal,
+            ExternalScheme.decideWebContentNavigation("mailto:a@b.com", gesture = true),
+        )
+    }
+
+    @Test
+    fun `external scheme without a gesture is ignored`() {
+        // A hidden iframe or auto-redirect (no user gesture) must not launch an app.
+        assertEquals(
+            ExternalScheme.WebNavigation.Ignore,
+            ExternalScheme.decideWebContentNavigation("intent://x/#Intent;end", gesture = false),
+        )
+        assertEquals(
+            ExternalScheme.WebNavigation.Ignore,
+            ExternalScheme.decideWebContentNavigation("market://details?id=x", gesture = false),
+        )
     }
 }

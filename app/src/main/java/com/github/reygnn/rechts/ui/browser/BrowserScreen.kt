@@ -313,11 +313,9 @@ private fun createBrowserWebView(
 ): WebView {
     // Cheap throttle shared by the download + file-upload notices so a hostile
     // page that auto-fires either in a loop can't flood the screen with toasts.
-    var lastUnsupportedNoticeAt = 0L
+    val noticeGate = MinIntervalGate(UNSUPPORTED_TOAST_MIN_INTERVAL_MS)
     fun notifyUnsupported(ctx: Context, messageRes: Int) {
-        val now = SystemClock.uptimeMillis()
-        if (now - lastUnsupportedNoticeAt < UNSUPPORTED_TOAST_MIN_INTERVAL_MS) return
-        lastUnsupportedNoticeAt = now
+        if (!noticeGate.accept(SystemClock.uptimeMillis())) return
         Toast.makeText(ctx, messageRes, Toast.LENGTH_SHORT).show()
     }
 
@@ -335,20 +333,24 @@ private fun createBrowserWebView(
             request: WebResourceRequest,
         ): Boolean {
             val url = request.url.toString()
-            if (ExternalScheme.isInternal(url)) return false
-            // Only honour external-app launches the user actually triggered. A
-            // page must not be able to silently fling the user into another app
-            // via a hidden iframe or an auto-redirect to intent:/market:/tel:
-            // with no user gesture (matching Chrome). Swallow it and stay put.
-            if (!request.hasGesture()) {
-                Log.d(TAG, "Ignoring gesture-less external navigation: $url")
-                return true
+            return when (ExternalScheme.decideWebContentNavigation(url, request.hasGesture())) {
+                ExternalScheme.WebNavigation.LoadInWebView -> false
+
+                // Gesture-less external navigation: swallow it and stay put.
+                ExternalScheme.WebNavigation.Ignore -> {
+                    Log.d(TAG, "Ignoring gesture-less external navigation: $url")
+                    true
+                }
+
+                // Hand off to another app; if none handled it, fall back to the
+                // page the intent: author named.
+                ExternalScheme.WebNavigation.DispatchExternal -> {
+                    if (!ExternalScheme.dispatch(view.context, url, fromWebContent = true)) {
+                        ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
+                    }
+                    true
+                }
             }
-            // No app handled it → fall back to the page the intent: author named.
-            if (!ExternalScheme.dispatch(view.context, url, fromWebContent = true)) {
-                ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
-            }
-            return true
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {

@@ -19,8 +19,9 @@ domain/
   UrlNormalizerTest.kt          — pure address-bar logic: URL vs search, encoding, edge cases
 ui/browser/
   BrowserViewModelTest.kt       — Turbine for state transitions + loadRequests SharedFlow
+  MinIntervalGateTest.kt        — pure: toast-throttle gate (time passed in, no SystemClock)
 web/
-  ExternalSchemeTest.kt         — pure: isInternal scheme classification (JVM-only)
+  ExternalSchemeTest.kt         — pure: isInternal + decideWebContentNavigation (gesture gate)
   ExternalSchemeFallbackTest.kt — Robolectric: intent: browser_fallback_url parsing
 util/
   MainDispatcherRule.kt         — sets Dispatchers.Main = UnconfinedTestDispatcher

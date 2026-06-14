@@ -30,6 +30,31 @@ object ExternalScheme {
         return scheme in INTERNAL_SCHEMES
     }
 
+    /** What to do with a navigation a loaded page initiated. */
+    enum class WebNavigation {
+        /** http(s)/about — let the WebView load it itself. */
+        LoadInWebView,
+
+        /** External scheme with a user gesture — hand off to another app. */
+        DispatchExternal,
+
+        /** External scheme with no user gesture — swallow it (anti-abuse). */
+        Ignore,
+    }
+
+    /**
+     * Pure decision for `shouldOverrideUrlLoading`: an internal URL is loaded in
+     * place; an external scheme is dispatched to another app only when the page
+     * navigation carried a user [gesture]. A gesture-less external navigation
+     * (hidden iframe, auto-redirect to intent:/market:/tel:) is ignored so a
+     * page can't silently fling the user into another app (matching Chrome).
+     */
+    fun decideWebContentNavigation(url: String, gesture: Boolean): WebNavigation = when {
+        isInternal(url) -> WebNavigation.LoadInWebView
+        !gesture -> WebNavigation.Ignore
+        else -> WebNavigation.DispatchExternal
+    }
+
     /**
      * Tries to open [url] in another app. Returns `true` if an app was
      * launched, `false` if nothing could handle it (the caller then simply
