@@ -152,15 +152,29 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    gate before loading, so an explicit intent carrying a non-`http(s)` scheme
    (`data:`, `javascript:`, …) is handed off to another app, never loaded in the
    WebView. The in-app "set as default" action uses `RoleManager.ROLE_BROWSER`.
-8. **Private mode always opens the homepage — and is never restored.** Entering
-   private mode starts a fresh session at `UrlNormalizer.HOME_URL`; a private
-   session is never persisted or reconstructed, in memory or on disk. The
-   normal-session in-memory snapshot is taken in `onTogglePrivate` only when
-   *leaving normal* (never when leaving private), and every restore path
-   (`FirstLoadRouter`, the disk history saver, the `restoreState` branch) is
-   gated on `!isPrivate`. This is the user-visible half of the privacy promise
-   in hard rule 3: switching into private must look and behave like a clean
-   slate. Don't add a "remember the private page" path.
+8. **A private session is never persisted or restored; switching into private
+   starts fresh at the homepage.** Two distinct guarantees:
+   - **Never persisted/restored (the privacy core).** A private session is never
+     written to disk or to the in-memory normal snapshot, and never
+     reconstructed from either. The disk history saver returns null while
+     `isPrivate` (plus the `HistoryPersistencePolicy` check); the normal snapshot
+     is taken in `onTogglePrivate` only when *leaving normal* (never private);
+     and both `FirstLoadRouter` restore branches are gated on `!isPrivate`.
+   - **Toggling into private opens the homepage.** A mode switch into private has
+     no inbound URL (consumed) and no crash reload, so `FirstLoadRouter` falls
+     through to `UrlNormalizer.HOME_URL` — a clean slate, the user-visible half
+     of the privacy promise in hard rule 3.
+
+   This is **not** "private ignores every navigation and forces the homepage."
+   Private is still a working browser: typed input and in-page navigation load
+   normally, an **inbound `VIEW` link** opens its URL in private (hard rule 7 —
+   the inbound branch precedes the restore branches and is intentionally not
+   `isPrivate`-gated), and a **renderer-crash recovery** reopens the current
+   private page from in-memory `reloadAfterCrash` (live-session recovery, never
+   persisted). None of these reconstruct a *previous* session, so none violate
+   the privacy core. Don't add a "remember the private page across launches /
+   mode switches" path; equally, don't force inbound links or crash recovery to
+   the homepage.
 
 ---
 
