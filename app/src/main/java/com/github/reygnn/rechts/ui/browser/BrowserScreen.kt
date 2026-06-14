@@ -1,7 +1,9 @@
 package com.github.reygnn.rechts.ui.browser
 
+import android.app.Activity
 import android.app.role.RoleManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
@@ -105,12 +107,31 @@ private const val TAG = "BrowserScreen"
 private const val UNSUPPORTED_TOAST_MIN_INTERVAL_MS = 3_000L
 
 /**
+ * Grace period after which the throwaway onCreateWindow capture WebView is torn
+ * down if it never captured a navigation (e.g. a `window.open()` with no URL).
+ * Without this it would leak — it only self-destructs from inside
+ * `shouldOverrideUrlLoading`, which such a popup never reaches.
+ */
+private const val CAPTURE_WEBVIEW_TIMEOUT_MS = 10_000L
+
+/**
  * Cap on the serialized WebView history we persist across process death. The
  * Binder transaction that carries saved instance state is bounded (~1 MB shared
  * across the whole activity), so keep our slice well under it; if a deep history
  * exceeds this we drop it rather than risk TransactionTooLargeException.
  */
 private const val MAX_HISTORY_STATE_BYTES = 512 * 1024
+
+/**
+ * The [Activity] hosting this Compose tree, unwrapping any [ContextWrapper]
+ * layers. `LocalContext` is normally the activity itself, but unwrap defensively
+ * so a wrapped context (themed overlay, etc.) still resolves.
+ */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 /** Size of [bundle] once marshalled, used to keep the persisted history bounded. */
 private fun marshalledSize(bundle: Bundle): Int {
@@ -197,20 +218,27 @@ fun BrowserScreen(
     // the OS persists UI state to kill and later recreate the process.
     val savedHistory by rememberSaveable(
         stateSaver = object : Saver<Bundle?, Bundle> {
-            override fun SaverScope.save(value: Bundle?): Bundle =
-                // Never persist a private session: writing its URLs into the
-                // on-disk instance state would let private browsing outlive the
-                // app process. Normal browsing snapshots its history as usual.
-                Bundle().also { bundle ->
-                    if (!isPrivate) {
-                        webView.saveState(bundle)
-                        // saveState serializes the whole back/forward list; a very
-                        // deep history could blow the ~1 MB Binder transaction
-                        // budget for saved instance state (TransactionTooLargeException).
-                        // Dropping it (→ homepage on restore) beats crashing.
-                        if (marshalledSize(bundle) > MAX_HISTORY_STATE_BYTES) bundle.clear()
-                    }
+            // Returning null means "nothing to persist": rememberSaveable then
+            // restores to null and FirstLoadRouter sees no saved history (→
+            // homepage). The alternative — an empty Bundle — would masquerade
+            // as real history (hasSavedHistory == true) only to fail
+            // restoreState one layer later, so prefer an honest null here.
+            override fun SaverScope.save(value: Bundle?): Bundle? {
+                // Skip serializing a private session entirely — its URLs must
+                // never touch disk-persisted instance state.
+                if (isPrivate) return null
+                val bundle = Bundle()
+                webView.saveState(bundle)
+                // Drop private or oversize history (Binder budget) per the pure,
+                // JVM-tested policy rather than reasoning about it inline.
+                return bundle.takeIf {
+                    HistoryPersistencePolicy.shouldPersist(
+                        isPrivate = isPrivate,
+                        marshalledSize = marshalledSize(it),
+                        maxBytes = MAX_HISTORY_STATE_BYTES,
+                    )
                 }
+            }
 
             override fun restore(value: Bundle): Bundle? = value
         },
@@ -242,14 +270,19 @@ fun BrowserScreen(
             when (action) {
                 is FirstLoadAction.LoadInWebView -> webView.loadUrl(action.url)
 
-                // Hand the inbound link off to another app; on failure honour an
-                // intent: fallback page, else the homepage. (data:/javascript:/app
-                // deep links arrive here, never into the WebView.)
-                is FirstLoadAction.DispatchInbound -> {
-                    val handled = ExternalScheme.dispatch(context, action.url)
-                    val fallback = if (handled) null else ExternalScheme.fallbackUrl(action.url)
-                    webView.loadUrl(fallback ?: UrlNormalizer.HOME_URL)
-                }
+                // Hand the inbound link off to another app. (data:/javascript:/app
+                // deep links arrive here, never into the WebView.) This path is
+                // reached only on a cold launch carrying such a link, so on a
+                // successful handoff there is nothing of our own to show —
+                // finish rather than popping the homepage into the foreground.
+                // Only on failure do we honour an intent: fallback page, else
+                // the homepage.
+                is FirstLoadAction.DispatchInbound ->
+                    if (ExternalScheme.dispatch(context, action.url)) {
+                        context.findActivity()?.finish()
+                    } else {
+                        webView.loadUrl(ExternalScheme.fallbackUrl(action.url) ?: UrlNormalizer.HOME_URL)
+                    }
 
                 // restoreState rebuilds the history synchronously; mirror the
                 // back/forward list into the chrome now, before the restored
@@ -291,8 +324,19 @@ fun BrowserScreen(
         }
     }
 
-    // System back navigates page history before leaving the app.
-    BackHandler(enabled = state.canGoBack) { webView.goBack() }
+    // Whether the address bar currently holds focus. Mirrored locally (the
+    // ViewModel keeps its own copy for page-event handling) so system back can
+    // abandon an in-progress edit first.
+    var addressFocused by remember { mutableStateOf(false) }
+
+    // System back: while the address bar is being edited, first leave the edit
+    // (clearFocus → the ViewModel restores the page URL) instead of navigating
+    // page history or exiting the app; otherwise navigate back, then leave the
+    // app. The IME normally swallows back to hide itself before this fires, so
+    // this is the deterministic fallback once the keyboard is already down.
+    BackHandler(enabled = addressFocused || state.canGoBack) {
+        if (addressFocused) focusManager.clearFocus() else webView.goBack()
+    }
 
     // Suspend the WebView with the app: AndroidView gives no lifecycle bridge,
     // so without this a backgrounded page keeps running JS timers and media.
@@ -370,7 +414,10 @@ fun BrowserScreen(
                 onSetDefaultBrowser = onSetDefaultBrowser,
                 onAddressChange = viewModel::onAddressChange,
                 onAddressClear = viewModel::onAddressClear,
-                onAddressFocusChanged = viewModel::onAddressFocusChanged,
+                onAddressFocusChanged = { focused ->
+                    addressFocused = focused
+                    viewModel.onAddressFocusChanged(focused)
+                },
                 onAddressSubmit = {
                     viewModel.onAddressSubmit()
                     focusManager.clearFocus()
@@ -490,11 +537,19 @@ private fun createBrowserWebView(
             if (!isUserGesture) return false
             val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
             val href = WebView(view.context)
+            // Same jar as the main view: if this capture WebView ever did load
+            // something, it must not spill into the persistent default profile
+            // during a private session. It stays otherwise locked down (no
+            // WebViewConfig.apply → JavaScript off); its only job is the capture
+            // below.
+            WebViewConfig.bindProfile(href, privateMode)
+            var captured = false
             href.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(
                     inner: WebView,
                     request: WebResourceRequest,
                 ): Boolean {
+                    captured = true
                     val url = request.url.toString()
                     when {
                         ExternalScheme.isInternal(url) -> view.loadUrl(url)
@@ -509,6 +564,11 @@ private fun createBrowserWebView(
             }
             transport.webView = href
             resultMsg.sendToTarget()
+            // Safety net against a popup that never triggers a navigation we can
+            // capture (e.g. window.open() with no URL): without this the capture
+            // WebView would leak, since it only self-destructs from inside the
+            // override above. No-op once it has done its job.
+            href.postDelayed({ if (!captured) href.destroy() }, CAPTURE_WEBVIEW_TIMEOUT_MS)
             return true
         }
 

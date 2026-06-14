@@ -81,7 +81,19 @@ object UrlNormalizer {
         // bracketed authority as a host directly.
         if (authority.startsWith('[')) return authority.contains(']')
 
-        val host = authority.substringBefore(':')   // drop the port
+        // Split off an optional port. A present port must be a valid TCP port
+        // (1..65535); otherwise this isn't a real host:port pair, so treat the
+        // whole thing as a search query (e.g. "foo:bar", "localhost:abc") —
+        // what real browsers do.
+        val colon = authority.indexOf(':')
+        val host: String
+        if (colon >= 0) {
+            host = authority.substring(0, colon)
+            val port = authority.substring(colon + 1).toIntOrNull()
+            if (port == null || port !in 1..65535) return false
+        } else {
+            host = authority
+        }
 
         // localhost (with or without a port) is a valid host without a dot.
         if (host.equals("localhost", ignoreCase = true)) return true

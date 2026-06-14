@@ -100,6 +100,24 @@ class UrlNormalizerTest {
     }
 
     @Test
+    fun `host with a non-numeric port is a search, not a host`() {
+        // An invalid port means this isn't a host:port pair — search it.
+        assertTrue(UrlNormalizer.toUrlOrSearch("localhost:abc")!!.startsWith("https://duckduckgo.com/?q="))
+        assertTrue(UrlNormalizer.toUrlOrSearch("example.com:abc")!!.startsWith("https://duckduckgo.com/?q="))
+    }
+
+    @Test
+    fun `host with an out-of-range port is a search`() {
+        assertTrue(UrlNormalizer.toUrlOrSearch("example.com:99999")!!.startsWith("https://duckduckgo.com/?q="))
+        assertTrue(UrlNormalizer.toUrlOrSearch("example.com:0")!!.startsWith("https://duckduckgo.com/?q="))
+    }
+
+    @Test
+    fun `host with a valid port is recognized`() {
+        assertEquals("https://example.com:8080", UrlNormalizer.toUrlOrSearch("example.com:8080"))
+    }
+
+    @Test
     fun `single word without a dot is a search`() {
         assertEquals("https://duckduckgo.com/?q=kotlin", UrlNormalizer.toUrlOrSearch("kotlin"))
     }

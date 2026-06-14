@@ -86,6 +86,24 @@ object WebViewConfig {
     }
 
     /**
+     * Binds [webView] to the same profile [apply] would (the isolated
+     * [PRIVATE_PROFILE] in private mode, the default profile otherwise) WITHOUT
+     * touching any other setting.
+     *
+     * For the throwaway capture WebView in `onCreateWindow`: it only intercepts
+     * a popup's first navigation and hands it back to the main view, so it must
+     * stay locked down (JavaScript etc. off — i.e. no [apply]) but must still
+     * sit on the private jar during a private session, or a popup that did load
+     * could spill data into the persistent default profile.
+     */
+    fun bindProfile(webView: WebView, privateMode: Boolean) {
+        if (privateMode && multiProfileSupported()) {
+            ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
+            WebViewCompat.setProfile(webView, PRIVATE_PROFILE)
+        }
+    }
+
+    /**
      * Deletes the isolated private-browsing profile and all its data. Safe to
      * call when no WebView is using that profile (e.g. on a cold launch). The
      * normal/default profile — and therefore saved logins — is untouched.
