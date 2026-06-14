@@ -101,9 +101,15 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    source of truth: `UrlNormalizer.HOME_URL`; the search endpoint
    (`SEARCH_PREFIX`) is derived from it and `BrowserScreen` reads
    `UrlNormalizer.HOME_URL` for the homepage. Change it in one place.
-5. **Known limitation:** WebView page state is lost on configuration change
-   (rotation) — acceptable for "minimal". Don't paper over it with an
-   orientation lock; if it ever matters, solve it with proper state saving.
+5. **The Activity handles configuration changes itself** via
+   `android:configChanges` (orientation, resize, dark mode, font scale,
+   locale, …). That keeps the live WebView — and its open page, scroll
+   position, history and form input — alive across rotation instead of
+   recreating it and reloading the homepage. Compose still updates theme,
+   layout direction, etc. through `LocalConfiguration`, so this is NOT an
+   orientation lock. Don't drop `configChanges` without restoring WebView
+   state some other way (`saveState`/`restoreState`), or rotation will reload
+   the homepage again.
 
 ---
 
