@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -176,13 +177,14 @@ private fun BrowserChrome(
                 }
             }
 
-            // Determinate progress while loading; gone once the page is in.
-            if (state.isLoading) {
-                LinearProgressIndicator(
-                    progress = { state.progress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
+            // Determinate progress bar. Always laid out (only faded out when
+            // idle) so showing/hiding it never shifts the WebView below.
+            LinearProgressIndicator(
+                progress = { state.progress / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (state.isLoading) 1f else 0f),
+            )
         }
     }
 }
