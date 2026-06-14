@@ -99,6 +99,24 @@ class BrowserViewModelTest {
         }
 
     @Test
+    fun `a burst exceeding the channel buffer is fully delivered, none dropped`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            // Channel.BUFFERED holds 64. Emit more than that BEFORE any collector
+            // attaches: with trySend the overflow would be silently dropped; the
+            // suspending send parks the surplus until the buffer drains, so all
+            // requests arrive in order.
+            val count = 70
+            repeat(count) { vm.openExternalUrl("https://example.com/$it") }
+            vm.loadRequests.test {
+                for (i in 0 until count) {
+                    assertEquals("https://example.com/$i", awaitItem())
+                }
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
     fun `onPageStarted marks loading and mirrors url and history`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onPageStarted("https://example.com", canGoBack = true, canGoForward = false)

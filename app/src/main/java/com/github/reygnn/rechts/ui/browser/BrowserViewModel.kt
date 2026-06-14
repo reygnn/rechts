@@ -1,6 +1,7 @@
 package com.github.reygnn.rechts.ui.browser
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.github.reygnn.rechts.domain.UrlNormalizer
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Holds the observable browser-chrome state and turns address-bar input into
@@ -27,7 +29,9 @@ class BrowserViewModel : ViewModel() {
     /**
      * URLs to load. A buffered [Channel] (not a `replay = 0` SharedFlow) so a
      * request submitted before the collector attaches is buffered and still
-     * delivered, never silently dropped.
+     * delivered, never silently dropped. Producers use a suspending `send` (via
+     * [viewModelScope]) rather than `trySend`, so even a burst that fills the
+     * buffer waits for space instead of being dropped.
      */
     private val _loadRequests = Channel<String>(Channel.BUFFERED)
     val loadRequests: Flow<String> = _loadRequests.receiveAsFlow()
@@ -83,9 +87,11 @@ class BrowserViewModel : ViewModel() {
     fun onAddressSubmit() {
         val target = UrlNormalizer.toUrlOrSearch(_uiState.value.addressText) ?: return
         submitInFlight = true
-        // Best-effort: the BUFFERED channel has ample capacity, and a request
-        // sent before the collector attaches is buffered (not dropped).
-        _loadRequests.trySend(target)
+        // Suspending send (not trySend): the request is buffered if the collector
+        // hasn't attached yet, and waits for space rather than being dropped if a
+        // burst ever fills the buffer. With Dispatchers.Main.immediate this runs
+        // synchronously while the buffer has room.
+        viewModelScope.launch { _loadRequests.send(target) }
     }
 
     /**
@@ -111,7 +117,8 @@ class BrowserViewModel : ViewModel() {
      * the URL is taken as-is.
      */
     fun openExternalUrl(url: String) {
-        _loadRequests.trySend(url)
+        // Suspending send, same rationale as onAddressSubmit: never dropped.
+        viewModelScope.launch { _loadRequests.send(url) }
     }
 
     /**
