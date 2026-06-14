@@ -93,10 +93,16 @@ class BrowserViewModel : ViewModel() {
      * `WebView.stopLoading()` doesn't reliably push a final
      * `onProgressChanged(100)`/`onPageFinished` — and ignore any trailing
      * progress ticks for the stopped page until the next [onPageStarted].
+     *
+     * Mirror the WebView's current [canGoBack]/[canGoForward] too: stopping can
+     * interrupt a navigation that already committed, so the back/forward state
+     * may have changed and would otherwise stay stale until the next callback.
      */
-    fun onStopLoading() {
+    fun onStopLoading(canGoBack: Boolean, canGoForward: Boolean) {
         loadingStopped = true
-        _uiState.update { it.copy(progress = 100) }
+        _uiState.update {
+            it.copy(progress = 100, canGoBack = canGoBack, canGoForward = canGoForward)
+        }
     }
 
     /**

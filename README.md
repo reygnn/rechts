@@ -9,7 +9,9 @@ companion is *rechts* — "right".
 ## What it does
 
 - Type a URL or a search term in the single address bar; rechts figures out
-  which you meant and either loads the page or searches (DuckDuckGo).
+  which you meant and either loads the page or searches (DuckDuckGo). A bare
+  host is opened over `https` — including `localhost`, so a local dev server on
+  plain `http` needs the `http://` prefix typed explicitly.
 - Back, forward, reload / stop.
 - A slim load-progress bar.
 - Opens `http`/`https` links from other apps — can be set as your default

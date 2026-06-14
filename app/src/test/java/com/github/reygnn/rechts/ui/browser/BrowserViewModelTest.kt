@@ -130,9 +130,13 @@ class BrowserViewModelTest {
         vm.onProgressChanged(40)
         assertTrue(vm.uiState.value.isLoading)
 
-        vm.onStopLoading()
+        // A stop can interrupt a navigation that already committed, so the
+        // current history flags are passed in and mirrored into the chrome.
+        vm.onStopLoading(canGoBack = true, canGoForward = false)
         assertEquals(100, vm.uiState.value.progress)
         assertFalse(vm.uiState.value.isLoading)
+        assertTrue(vm.uiState.value.canGoBack)
+        assertFalse(vm.uiState.value.canGoForward)
     }
 
     @Test
@@ -140,7 +144,7 @@ class BrowserViewModelTest {
         runTest(mainRule.dispatcher) {
             val vm = BrowserViewModel()
             vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-            vm.onStopLoading()
+            vm.onStopLoading(canGoBack = false, canGoForward = false)
             // stopLoading() is async: a late tick for the stopped page arrives.
             vm.onProgressChanged(70)
             assertEquals(100, vm.uiState.value.progress)
@@ -151,7 +155,7 @@ class BrowserViewModelTest {
     fun `a new navigation after stop re-enables progress`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-        vm.onStopLoading()
+        vm.onStopLoading(canGoBack = false, canGoForward = false)
         // The user navigates again (reload / new URL): progress is meaningful.
         vm.onPageStarted("https://other.example", canGoBack = true, canGoForward = false)
         vm.onProgressChanged(30)
@@ -177,7 +181,7 @@ class BrowserViewModelTest {
         runTest(mainRule.dispatcher) {
             val vm = BrowserViewModel()
             vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-            vm.onStopLoading()
+            vm.onStopLoading(canGoBack = false, canGoForward = false)
             // stopLoading() is async: the stopped page still emits a late
             // onPageFinished for the URL it was navigating to. It must not move
             // the address bar there, but may still update the history flags.
@@ -194,7 +198,7 @@ class BrowserViewModelTest {
         runTest(mainRule.dispatcher) {
             val vm = BrowserViewModel()
             vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-            vm.onStopLoading()
+            vm.onStopLoading(canGoBack = false, canGoForward = false)
             // A fresh navigation clears the stop flag, so its onPageFinished
             // settles the chrome to the new URL as usual.
             vm.onPageStarted("https://other.example", canGoBack = true, canGoForward = false)

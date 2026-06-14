@@ -416,7 +416,7 @@ fun BrowserScreen(
                         // stop icon could stay stuck. onStopLoading() also
                         // suppresses any trailing progress tick for the stopped
                         // page so the bar can't flicker back in.
-                        viewModel.onStopLoading()
+                        viewModel.onStopLoading(webView.canGoBack(), webView.canGoForward())
                     } else {
                         webView.reload()
                     }
@@ -626,7 +626,7 @@ private fun createBrowserWebView(
             fileChooserParams: FileChooserParams,
         ): Boolean {
             filePathCallback.onReceiveValue(null)
-            notifyUnsupported(webView.context, R.string.file_upload_unsupported)
+            notifyUnsupported(context, R.string.file_upload_unsupported)
             return true
         }
     }
