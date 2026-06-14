@@ -173,6 +173,36 @@ class BrowserViewModelTest {
     }
 
     @Test
+    fun `a trailing onPageFinished after stop keeps the chrome settled`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+            vm.onStopLoading()
+            // stopLoading() is async: the stopped page still emits a late
+            // onPageFinished for the URL it was navigating to. It must not move
+            // the address bar there, but may still update the history flags.
+            vm.onPageFinished("https://example.com/never-shown", canGoBack = true, canGoForward = false)
+            val state = vm.uiState.value
+            assertEquals("https://example.com", state.currentUrl)
+            assertEquals("https://example.com", state.addressText)
+            assertEquals(100, state.progress)
+            assertTrue(state.canGoBack)
+        }
+
+    @Test
+    fun `onPageFinished resumes normally after a new navigation clears the stop`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+            vm.onStopLoading()
+            // A fresh navigation clears the stop flag, so its onPageFinished
+            // settles the chrome to the new URL as usual.
+            vm.onPageStarted("https://other.example", canGoBack = true, canGoForward = false)
+            vm.onPageFinished("https://other.example/done", canGoBack = true, canGoForward = false)
+            assertEquals("https://other.example/done", vm.uiState.value.addressText)
+        }
+
+    @Test
     fun `page events do not clobber the address bar while the user is editing`() =
         runTest(mainRule.dispatcher) {
             val vm = BrowserViewModel()

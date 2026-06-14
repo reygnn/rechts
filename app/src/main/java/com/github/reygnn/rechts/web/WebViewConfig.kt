@@ -64,6 +64,13 @@ object WebViewConfig {
             allowFileAccess = false
             allowContentAccess = false
 
+            // Route target="_blank" / window.open() through onCreateWindow
+            // instead of letting the platform silently no-op them. rechts has no
+            // tabs, so the chrome client redirects the requested URL back into
+            // this same WebView (see BrowserScreen.onCreateWindow). Without this,
+            // a programmatic window.open leaves such links dead.
+            setSupportMultipleWindows(true)
+
             // Sensible browsing defaults.
             loadsImagesAutomatically = true
             useWideViewPort = true

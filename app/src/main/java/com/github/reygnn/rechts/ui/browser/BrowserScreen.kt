@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Message
 import android.os.Parcel
 import android.os.SystemClock
 import android.provider.Settings
@@ -147,6 +148,15 @@ fun BrowserScreen(
     var isPrivate by rememberSaveable {
         mutableStateOf(settings.privateMode && privateAvailable)
     }
+
+    // The initializer above gates on privateAvailable, but rememberSaveable
+    // restores the *saved* value verbatim on a process-death restore without
+    // re-running it. If the platform lost multi-profile support since that state
+    // was written, drop back to normal mode — otherwise the lock icon would sit
+    // over the (non-isolated) default profile, the exact false privacy promise
+    // the gating avoids. Practically unreachable (WebView feature support doesn't
+    // regress), but it keeps the "lock never lies" invariant total.
+    LaunchedEffect(Unit) { if (isPrivate && !privateAvailable) isPrivate = false }
 
     // Bumped when the render process dies (see onRenderProcessGone); keying the
     // WebView on it forces a fresh instance instead of letting the platform kill
@@ -459,6 +469,47 @@ private fun createBrowserWebView(
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             viewModel.onProgressChanged(newProgress)
+        }
+
+        // A page asked to open a new window (target="_blank" or window.open).
+        // rechts has no tabs, so route the destination into THIS WebView rather
+        // than dropping it — with multiple windows enabled (WebViewConfig) the
+        // platform default would otherwise just no-op such links.
+        //
+        // onCreateWindow carries no URL, so a throwaway WebView captures the
+        // popup's first navigation and hands it back to the main view through
+        // the usual scheme gate (http(s) loads here; an external scheme is
+        // dispatched). Only honour user-initiated opens: a gesture-less
+        // window.open is popup spam and is blocked (returning false).
+        override fun onCreateWindow(
+            view: WebView,
+            isDialog: Boolean,
+            isUserGesture: Boolean,
+            resultMsg: Message,
+        ): Boolean {
+            if (!isUserGesture) return false
+            val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
+            val href = WebView(view.context)
+            href.webViewClient = object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    inner: WebView,
+                    request: WebResourceRequest,
+                ): Boolean {
+                    val url = request.url.toString()
+                    when {
+                        ExternalScheme.isInternal(url) -> view.loadUrl(url)
+                        ExternalScheme.dispatch(inner.context, url, fromWebContent = true) -> Unit
+                        else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
+                    }
+                    // The capture WebView has done its one job; tear it down off
+                    // the callback stack (destroy() mid-callback is unsafe).
+                    inner.post { inner.destroy() }
+                    return true
+                }
+            }
+            transport.webView = href
+            resultMsg.sendToTarget()
+            return true
         }
 
         // rechts requests no device capabilities for web content. Deny

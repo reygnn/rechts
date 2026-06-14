@@ -164,8 +164,13 @@ class BrowserViewModel : ViewModel() {
     fun onPageFinished(url: String, canGoBack: Boolean, canGoForward: Boolean) {
         _uiState.update {
             it.copy(
-                currentUrl = url,
-                addressText = if (addressBarFocused) it.addressText else url,
+                // After a user-initiated stop, a trailing onPageFinished for the
+                // stopped page must not move the chrome to its partially-loaded
+                // URL — keep it as onStopLoading() settled it (mirrors the
+                // onProgressChanged guard). The back/forward flags are still worth
+                // mirroring: the navigation may already have committed.
+                currentUrl = if (loadingStopped) it.currentUrl else url,
+                addressText = if (loadingStopped || addressBarFocused) it.addressText else url,
                 progress = 100,
                 canGoBack = canGoBack,
                 canGoForward = canGoForward,
