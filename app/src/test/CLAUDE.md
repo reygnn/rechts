@@ -50,9 +50,18 @@ Mostly JVM-only; `ExternalSchemeFallbackTest` needs Robolectric (real
   `@Config(sdk = [36])`) so the pure suites stay fast, and still prefer a pure
   test when one would cover the logic just as well — speed, not prohibition, is
   the reason.
-- **No androidTest source set.** Robolectric covers the Android-runtime cases;
-  add an instrumented source set only if a real device/emulator is genuinely
-  required.
+- **`androidTest` is reserved for what a real WebView/Chromium engine alone can
+  prove.** Robolectric has no engine, so anything depending on real WebView
+  behaviour (e.g. `WebViewFeature.isFeatureSupported(MULTI_PROFILE)` is always
+  false there, real Profile cookie isolation) needs an instrumented test on a
+  device/emulator. Current example: `web/WebViewProfileIsolationTest` (API 36,
+  Google-APIs image; WebViewConfig profile isolation + the clearPrivateData
+  in-use guard). Run it with `./gradlew connectedDebugAndroidTest` — set
+  `ANDROID_SERIAL` to pick a device when several are attached. Gate such tests
+  with `assumeTrue(WebViewConfig.multiProfileSupported())` so they skip (not
+  fail) where the feature is absent. Keep this set tiny: most logic still
+  belongs in pure/Robolectric tests; reach for `androidTest` only when the
+  engine itself is the thing under test.
 
 ---
 

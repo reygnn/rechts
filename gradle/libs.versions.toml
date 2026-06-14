@@ -29,6 +29,12 @@ coroutinesTest      = "1.11.0"
 turbine             = "1.2.1"
 robolectric         = "4.16.1"
 
+# Instrumented tests (androidTest) — only for behaviour that needs a real
+# WebView/Chromium engine an emulator provides but Robolectric cannot fake
+# (e.g. real Profile isolation). See app/src/androidTest.
+androidxTestExtJunit = "1.2.1"
+androidxTestRunner   = "1.6.2"
+
 [libraries]
 androidx-core-ktx                    = { group = "androidx.core",              name = "core-ktx",                    version.ref = "coreKtx" }
 androidx-lifecycle-runtime-ktx       = { group = "androidx.lifecycle",         name = "lifecycle-runtime-ktx",       version.ref = "lifecycleRuntimeKtx" }
@@ -49,6 +55,8 @@ mockk                   = { group = "io.mockk",              name = "mockk",    
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 turbine                 = { group = "app.cash.turbine",       name = "turbine",                 version.ref = "turbine" }
 robolectric             = { group = "org.robolectric",        name = "robolectric",             version.ref = "robolectric" }
+androidx-test-ext-junit = { group = "androidx.test.ext",      name = "junit",                   version.ref = "androidxTestExtJunit" }
+androidx-test-runner    = { group = "androidx.test",          name = "runner",                  version.ref = "androidxTestRunner" }
 
 [plugins]
 # AGP 9 ships Kotlin built-in — NO external org.jetbrains.kotlin.android plugin.

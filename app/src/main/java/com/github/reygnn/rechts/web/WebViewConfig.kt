@@ -104,9 +104,17 @@ object WebViewConfig {
     }
 
     /**
-     * Deletes the isolated private-browsing profile and all its data. Safe to
-     * call when no WebView is using that profile (e.g. on a cold launch). The
+     * Deletes the isolated private-browsing profile and all its data. The
      * normal/default profile — and therefore saved logins — is untouched.
+     *
+     * Only actually deletes when the profile is not yet loaded in the current
+     * process: once any WebView (or [ProfileStore.getOrCreateProfile]) has
+     * touched it, the platform refuses deletion for the life of the process
+     * ("Cannot delete in-use profile"). That's exactly why the sole caller is
+     * `MainActivity.onCreate`, which runs in a fresh process (cold launch /
+     * process-death restore) *before* anything loads the profile. The in-use
+     * failure is swallowed (logged, not thrown) so the call site is always
+     * crash-proof even if that precondition is ever violated.
      */
     fun clearPrivateData() {
         if (!multiProfileSupported()) return

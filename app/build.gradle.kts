@@ -73,4 +73,9 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
     testImplementation(libs.robolectric)
+
+    // Instrumented tests run on a device/emulator with a real WebView — see
+    // app/src/androidTest. AndroidJUnitRunner is configured in defaultConfig.
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
