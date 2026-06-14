@@ -152,6 +152,15 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    gate before loading, so an explicit intent carrying a non-`http(s)` scheme
    (`data:`, `javascript:`, …) is handed off to another app, never loaded in the
    WebView. The in-app "set as default" action uses `RoleManager.ROLE_BROWSER`.
+8. **Private mode always opens the homepage — and is never restored.** Entering
+   private mode starts a fresh session at `UrlNormalizer.HOME_URL`; a private
+   session is never persisted or reconstructed, in memory or on disk. The
+   normal-session in-memory snapshot is taken in `onTogglePrivate` only when
+   *leaving normal* (never when leaving private), and every restore path
+   (`FirstLoadRouter`, the disk history saver, the `restoreState` branch) is
+   gated on `!isPrivate`. This is the user-visible half of the privacy promise
+   in hard rule 3: switching into private must look and behave like a clean
+   slate. Don't add a "remember the private page" path.
 
 ---
 
