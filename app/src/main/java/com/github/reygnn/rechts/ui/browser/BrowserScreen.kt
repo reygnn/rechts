@@ -20,6 +20,7 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -100,6 +101,7 @@ import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.WebViewConfig
+import java.io.ByteArrayInputStream
 
 private const val TAG = "BrowserScreen"
 
@@ -555,13 +557,23 @@ private fun createBrowserWebView(
             val href = WebView(view.context)
             // Track for lifecycle teardown (see DisposableEffect(webView)).
             captureWebViews.add(href)
-            // Same jar as the main view: if this capture WebView ever did load
-            // something, it must not spill into the persistent default profile
-            // during a private session. It stays otherwise locked down (no
-            // WebViewConfig.apply → JavaScript off); its only job is the capture
-            // below.
+            // Belt-and-suspenders profile binding: the shouldInterceptRequest net
+            // below already blocks any real network load, but keep the capture
+            // view on the same (private) jar as the main view so nothing could
+            // spill into the persistent default profile even if that net is ever
+            // weakened. It stays otherwise locked down (no WebViewConfig.apply →
+            // JavaScript off); its only job is the capture below.
             WebViewConfig.bindProfile(href, privateMode)
             var captured = false
+            // Hand a captured popup target to the MAIN view (or off to another
+            // app). Main-thread only — both call sites post onto it.
+            fun routeCapturedUrl(url: String) {
+                when {
+                    ExternalScheme.isInternal(url) -> view.loadUrl(url)
+                    ExternalScheme.dispatch(view.context, url, fromWebContent = true) -> Unit
+                    else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
+                }
+            }
             href.webViewClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(
                     inner: WebView,
@@ -576,17 +588,45 @@ private fun createBrowserWebView(
                     // load about:blank and keep waiting for the real navigation.
                     if (url == "about:blank") return false
                     captured = true
-                    when {
-                        ExternalScheme.isInternal(url) -> view.loadUrl(url)
-                        ExternalScheme.dispatch(inner.context, url, fromWebContent = true) -> Unit
-                        else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
-                    }
+                    routeCapturedUrl(url)
                     // The capture WebView has done its one job; tear it down off
                     // the callback stack (destroy() mid-callback is unsafe). The
                     // set-membership check is the single-owner guard so the screen
                     // tearing it down first can't cause a double destroy.
                     inner.post { if (captureWebViews.remove(href)) inner.destroy() }
                     return true
+                }
+
+                // Safety net: shouldOverrideUrlLoading is NOT guaranteed to fire
+                // for a popup's engine-initiated first navigation (window.open
+                // targets). On a WebView build that skips it, the off-screen
+                // capture view would otherwise silently fetch the real target —
+                // hitting the network and storing cookies in the profile — until
+                // its timeout. Intercept the main-frame request instead: capture
+                // the URL and return an empty body so the throwaway view never
+                // actually loads the page. Runs on a background thread, so every
+                // main-thread touch (routing into the live WebView, the
+                // capture-set, destroy) is posted; the !captured guard there keeps
+                // it idempotent with the override above (whichever fires first
+                // wins, the other no-ops).
+                override fun shouldInterceptRequest(
+                    inner: WebView,
+                    request: WebResourceRequest,
+                ): WebResourceResponse? {
+                    val url = request.url.toString()
+                    if (!request.isForMainFrame || url == "about:blank") return null
+                    inner.post {
+                        if (!captured) {
+                            captured = true
+                            routeCapturedUrl(url)
+                            if (captureWebViews.remove(href)) href.destroy()
+                        }
+                    }
+                    return WebResourceResponse(
+                        "text/plain",
+                        "utf-8",
+                        ByteArrayInputStream(ByteArray(0)),
+                    )
                 }
             }
             transport.webView = href
