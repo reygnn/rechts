@@ -109,12 +109,20 @@ object ExternalScheme {
     }
 
     private fun buildIntent(url: String, fromWebContent: Boolean): Intent {
-        // `intent:` URLs carry a full intent description; parse it, but strip
-        // the component/selector so a hostile page can't target an internal,
-        // non-exported activity, and require BROWSABLE so only intents meant
-        // to be triggered from web content are honoured.
+        // `intent:` URLs carry a full intent description; parse it, but force the
+        // action to VIEW, strip the component/selector so a hostile page can't
+        // target an internal, non-exported activity, and require BROWSABLE so
+        // only intents meant to be triggered from web content are honoured.
         val intent = if (url.startsWith("intent:", ignoreCase = true)) {
             Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {
+                // Clamp the action: web content may only ever launch a VIEW
+                // intent, never a sensitive action (CALL, CALL_PRIVILEGED,
+                // SENDTO, …) smuggled into the intent: string. BROWSABLE already
+                // requires a web-triggerable target; this makes the action itself
+                // non-negotiable. Trade-off: an exotic app deep link that relies
+                // on a non-VIEW action won't resolve — acceptable for a minimal
+                // browser, the safe default beats the rare convenience.
+                action = Intent.ACTION_VIEW
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 component = null
                 selector = null

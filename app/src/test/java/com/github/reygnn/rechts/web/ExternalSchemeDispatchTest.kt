@@ -49,6 +49,19 @@ class ExternalSchemeDispatchTest {
     }
 
     @Test
+    fun `intent url action is clamped to VIEW`() {
+        // A hostile intent: that names a sensitive action must be neutralised:
+        // web content may only ever trigger an ACTION_VIEW launch.
+        val url = "intent://evil/#Intent;scheme=foo;" +
+            "action=android.intent.action.CALL;end"
+        assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+
+        val launched = lastLaunched()!!
+        assertEquals("action must be forced to VIEW", Intent.ACTION_VIEW, launched.action)
+        assertTrue("BROWSABLE must still be present", launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+    }
+
+    @Test
     fun `intent url is stripped of URI-permission grant flags`() {
         // A hostile intent: must not smuggle in URI-permission grants; rechts
         // exposes none of its data to the target app.
