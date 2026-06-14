@@ -7,6 +7,10 @@ package com.github.reygnn.rechts.ui.browser
  *
  * Used to throttle the "unsupported" toasts so a page auto-firing downloads /
  * file pickers in a loop can't flood the screen.
+ *
+ * Not thread-safe: [lastAcceptedAt] is plain mutable state. It is only ever
+ * touched from the main thread (the download / file-chooser callbacks), so no
+ * synchronization is needed; don't call it off the main thread.
  */
 class MinIntervalGate(private val minIntervalMs: Long) {
 

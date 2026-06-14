@@ -344,8 +344,10 @@ fun BrowserScreen(
                         // stopLoading() doesn't reliably push a final
                         // onProgressChanged(100)/onPageFinished, so settle the
                         // chrome ourselves — otherwise the progress bar and the
-                        // stop icon could stay stuck.
-                        viewModel.onProgressChanged(100)
+                        // stop icon could stay stuck. onStopLoading() also
+                        // suppresses any trailing progress tick for the stopped
+                        // page so the bar can't flicker back in.
+                        viewModel.onStopLoading()
                     } else {
                         webView.reload()
                     }

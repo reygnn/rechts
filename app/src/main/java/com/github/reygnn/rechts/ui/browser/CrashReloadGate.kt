@@ -13,6 +13,10 @@ package com.github.reygnn.rechts.ui.browser
  *
  * Pure and time-source agnostic — the caller passes the current time — so it's
  * JVM-unit-testable without touching `SystemClock` (mirrors [MinIntervalGate]).
+ *
+ * Not thread-safe: the backing window is plain mutable state. It is only ever
+ * touched from the main thread (the `onRenderProcessGone` callback), so no
+ * synchronization is needed; don't call it off the main thread.
  */
 class CrashReloadGate(
     private val windowMs: Long = 10_000L,

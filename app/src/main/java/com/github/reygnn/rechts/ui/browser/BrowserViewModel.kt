@@ -43,6 +43,15 @@ class BrowserViewModel : ViewModel() {
      */
     private var submitInFlight = false
 
+    /**
+     * Set when the user stops a load. `stopLoading()` is asynchronous, so the
+     * engine can still emit a trailing `onProgressChanged(<100)` (or a late
+     * sub-resource tick) for the page being stopped, which would re-show the
+     * progress bar after we settled it. Suppress those until the next genuine
+     * navigation ([onPageStarted]) clears the flag.
+     */
+    private var loadingStopped = false
+
     // ── User input ────────────────────────────────────────────────────────
 
     fun onAddressChange(text: String) {
@@ -77,6 +86,17 @@ class BrowserViewModel : ViewModel() {
         // Best-effort: the BUFFERED channel has ample capacity, and a request
         // sent before the collector attaches is buffered (not dropped).
         _loadRequests.trySend(target)
+    }
+
+    /**
+     * The user stopped the in-flight load. Settle the chrome to idle now —
+     * `WebView.stopLoading()` doesn't reliably push a final
+     * `onProgressChanged(100)`/`onPageFinished` — and ignore any trailing
+     * progress ticks for the stopped page until the next [onPageStarted].
+     */
+    fun onStopLoading() {
+        loadingStopped = true
+        _uiState.update { it.copy(progress = 100) }
     }
 
     /**
@@ -121,6 +141,8 @@ class BrowserViewModel : ViewModel() {
     // ── WebView callbacks ─────────────────────────────────────────────────
 
     fun onPageStarted(url: String, canGoBack: Boolean, canGoForward: Boolean) {
+        // A genuine new navigation — progress is meaningful again.
+        loadingStopped = false
         _uiState.update {
             it.copy(
                 currentUrl = url,
@@ -133,6 +155,9 @@ class BrowserViewModel : ViewModel() {
     }
 
     fun onProgressChanged(progress: Int) {
+        // A trailing tick for a load the user just stopped must not re-show the
+        // progress bar; ignore until the next navigation resets the flag.
+        if (loadingStopped) return
         _uiState.update { it.copy(progress = progress) }
     }
 

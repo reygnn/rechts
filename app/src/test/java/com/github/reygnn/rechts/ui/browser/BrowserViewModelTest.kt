@@ -124,6 +124,42 @@ class BrowserViewModelTest {
     }
 
     @Test
+    fun `onStopLoading settles the chrome to idle`() = runTest(mainRule.dispatcher) {
+        val vm = BrowserViewModel()
+        vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+        vm.onProgressChanged(40)
+        assertTrue(vm.uiState.value.isLoading)
+
+        vm.onStopLoading()
+        assertEquals(100, vm.uiState.value.progress)
+        assertFalse(vm.uiState.value.isLoading)
+    }
+
+    @Test
+    fun `a trailing progress tick after stop does not re-show the bar`() =
+        runTest(mainRule.dispatcher) {
+            val vm = BrowserViewModel()
+            vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+            vm.onStopLoading()
+            // stopLoading() is async: a late tick for the stopped page arrives.
+            vm.onProgressChanged(70)
+            assertEquals(100, vm.uiState.value.progress)
+            assertFalse(vm.uiState.value.isLoading)
+        }
+
+    @Test
+    fun `a new navigation after stop re-enables progress`() = runTest(mainRule.dispatcher) {
+        val vm = BrowserViewModel()
+        vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
+        vm.onStopLoading()
+        // The user navigates again (reload / new URL): progress is meaningful.
+        vm.onPageStarted("https://other.example", canGoBack = true, canGoForward = false)
+        vm.onProgressChanged(30)
+        assertEquals(30, vm.uiState.value.progress)
+        assertTrue(vm.uiState.value.isLoading)
+    }
+
+    @Test
     fun `onPageFinished settles to loaded state and history`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
