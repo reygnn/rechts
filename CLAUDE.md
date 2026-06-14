@@ -72,7 +72,8 @@ com.github.reygnn.rechts/
   data/
     SettingsStore.kt             — SharedPreferences; remembers the browsing mode
   web/
-    WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + private wipe
+    WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + per-profile cookie policy + private wipe
+    ExternalScheme.kt            — pure scheme check + Intent dispatch for non-http(s) links (mailto:, tel:, intent:, …)
 ```
 
 Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
@@ -113,8 +114,19 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    layout direction, etc. through `LocalConfiguration`, so this is NOT an
    orientation lock. Don't drop `configChanges` without restoring WebView
    state some other way (`saveState`/`restoreState`), or rotation will reload
-   the homepage again.
-6. **Default-browser eligibility is load-bearing:** the `VIEW` + `BROWSABLE` +
+   the homepage again. **Process death** (not config change) *is* covered by
+   `WebView.saveState`/`restoreState`: `BrowserScreen` snapshots the history
+   into a `rememberSaveable` `Bundle` and restores it on the first composition
+   only — a mode switch (which also rebuilds the WebView) deliberately does
+   *not* restore, so profiles don't bleed into each other.
+6. **Non-WebView schemes go to other apps:** the WebView only loads
+   `http`/`https`/`about`. `web/ExternalScheme` intercepts everything else
+   (`mailto:`, `tel:`, `intent:`, app deep links) — both in-page link taps
+   (`shouldOverrideUrlLoading`) and typed input — and dispatches an
+   `ACTION_VIEW` intent instead of letting the WebView error with
+   `ERR_UNKNOWN_URL_SCHEME`. `intent:` URLs are hardened (component/selector
+   cleared, `BROWSABLE` required) before launch.
+7. **Default-browser eligibility is load-bearing:** the `VIEW` + `BROWSABLE` +
    `DEFAULT` (`http`/`https`) intent filter on `MainActivity` is what makes
    rechts selectable as a default browser — don't remove it. The activity is
    `singleTask`; inbound links arrive via `onCreate` (cold) and `onNewIntent`

@@ -40,10 +40,16 @@ object WebViewConfig {
     @SuppressLint("SetJavaScriptEnabled")
     fun apply(webView: WebView, privateMode: Boolean) {
         // Bind the isolated profile FIRST — it must be set before the WebView
-        // navigates anywhere.
-        if (privateMode && multiProfileSupported()) {
-            ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
+        // navigates anywhere — and grab *that profile's own* CookieManager, so
+        // the cookie policy below applies to the private jar and not to the
+        // default profile's. (CookieManager.getInstance() is the default
+        // profile's manager.)
+        val cookieManager = if (privateMode && multiProfileSupported()) {
+            val profile = ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
             WebViewCompat.setProfile(webView, PRIVATE_PROFILE)
+            profile.cookieManager
+        } else {
+            CookieManager.getInstance()
         }
 
         webView.settings.apply {
@@ -66,7 +72,7 @@ object WebViewConfig {
             displayZoomControls = false
         }
 
-        CookieManager.getInstance().apply {
+        cookieManager.apply {
             setAcceptCookie(true)                          // first-party: yes
             setAcceptThirdPartyCookies(webView, false)     // third-party: no
         }

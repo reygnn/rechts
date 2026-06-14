@@ -10,7 +10,9 @@ import java.net.URLEncoder
  * JVM-testable):
  *
  *  - Already has a *navigable* scheme (`https://`, `http://`, `about:`,
- *    `mailto:`, …) → use as-is.
+ *    `mailto:`, …) → use as-is. Non-WebView schemes such as `mailto:`/`tel:`
+ *    are returned verbatim here; the web layer ([com.github.reygnn.rechts.web.ExternalScheme])
+ *    is what hands them off to another app.
  *  - Looks like a bare host (`example.com`, `192.168.0.1`, `localhost:8080`,
  *    `user:pass@host.com`) → prepend `https://`.
  *  - Anything else (contains spaces, has no dot, or is a code scheme like

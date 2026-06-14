@@ -4,9 +4,11 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.os.Bundle
 import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -50,6 +52,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,6 +73,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
+import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.WebViewConfig
 
 @Composable
@@ -91,20 +96,50 @@ fun BrowserScreen(
     // profile (normal = persistent default, private = isolated, session-only).
     val webView = remember(isPrivate) { createBrowserWebView(context, viewModel, isPrivate) }
 
-    // First load: an inbound link if we were launched from one, else the
-    // homepage. Consumed once so later WebViews (mode switch) open the homepage.
+    // Serialized back/forward history, persisted ONLY across process death.
+    // android:configChanges keeps the live WebView across rotation, so the
+    // saver below never runs then; it snapshots the current WebView only when
+    // the OS persists UI state to kill and later recreate the process.
+    val savedHistory by rememberSaveable(
+        stateSaver = object : Saver<Bundle?, Bundle> {
+            override fun SaverScope.save(value: Bundle?): Bundle =
+                Bundle().also { webView.saveState(it) }
+
+            override fun restore(value: Bundle): Bundle? = value
+        },
+    ) { mutableStateOf<Bundle?>(null) }
+
+    // True only on the very first composition (including after process death),
+    // so a mode switch — which also rebuilds the WebView — never restores the
+    // other profile's old history.
+    var firstComposition by remember { mutableStateOf(true) }
+
+    // First load for this WebView: an inbound link if we were launched from
+    // one, else restored history (process-death only), else the homepage.
+    // pendingInitialUrl is consumed once so later WebViews (mode switch) don't
+    // reopen it.
     var pendingInitialUrl by rememberSaveable { mutableStateOf(initialUrl) }
     LaunchedEffect(webView) {
         if (webView.url == null) {
-            val target = pendingInitialUrl ?: UrlNormalizer.HOME_URL
+            val inbound = pendingInitialUrl
             pendingInitialUrl = null
-            webView.loadUrl(target)
+            when {
+                inbound != null -> webView.loadUrl(inbound)
+                firstComposition && savedHistory != null &&
+                    webView.restoreState(savedHistory!!) != null -> Unit // history restored
+                else -> webView.loadUrl(UrlNormalizer.HOME_URL)
+            }
+            firstComposition = false
         }
     }
 
-    // Forward load requests coming out of the ViewModel to the current WebView.
+    // Forward load requests out of the ViewModel: http(s)/about into the
+    // WebView, everything else (mailto:, tel:, …) off to another app.
     LaunchedEffect(webView) {
-        viewModel.loadRequests.collect { url -> webView.loadUrl(url) }
+        viewModel.loadRequests.collect { url ->
+            if (ExternalScheme.isInternal(url)) webView.loadUrl(url)
+            else ExternalScheme.dispatch(context, url)
+        }
     }
 
     // System back navigates page history before leaving the app.
@@ -183,6 +218,18 @@ private fun createBrowserWebView(
     )
 
     webViewClient = object : WebViewClient() {
+        // Let other apps handle non-http(s) links (mailto:, tel:, intent:, …);
+        // the WebView itself can't load them and would error out.
+        override fun shouldOverrideUrlLoading(
+            view: WebView,
+            request: WebResourceRequest,
+        ): Boolean {
+            val url = request.url.toString()
+            if (ExternalScheme.isInternal(url)) return false
+            ExternalScheme.dispatch(view.context, url)
+            return true
+        }
+
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
             viewModel.onPageStarted(url, view.canGoBack(), view.canGoForward())
         }
