@@ -20,11 +20,14 @@ composeBom          = "2026.05.01"
 # (MULTI_PROFILE since 1.10.0). Project-specific, not part of the family core.
 webkit              = "1.12.1"
 
-# Testing (JVM-only baseline: JUnit 4 + MockK + Turbine + coroutines-test)
+# Testing (JVM baseline: JUnit 4 + MockK + Turbine + coroutines-test).
+# Robolectric only for the few tests that genuinely need the Android runtime
+# (e.g. Intent parsing in web/ExternalScheme) — see app/src/test/CLAUDE.md.
 junit               = "4.13.2"
 mockk               = "1.14.9"
 coroutinesTest      = "1.11.0"
 turbine             = "1.2.1"
+robolectric         = "4.16.1"
 
 [libraries]
 androidx-core-ktx                    = { group = "androidx.core",              name = "core-ktx",                    version.ref = "coreKtx" }
@@ -45,6 +48,7 @@ junit                   = { group = "junit",                 name = "junit",    
 mockk                   = { group = "io.mockk",              name = "mockk",                   version.ref = "mockk" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 turbine                 = { group = "app.cash.turbine",       name = "turbine",                 version.ref = "turbine" }
+robolectric             = { group = "org.robolectric",        name = "robolectric",             version.ref = "robolectric" }
 
 [plugins]
 # AGP 9 ships Kotlin built-in — NO external org.jetbrains.kotlin.android plugin.

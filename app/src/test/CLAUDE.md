@@ -19,11 +19,15 @@ domain/
   UrlNormalizerTest.kt          — pure address-bar logic: URL vs search, encoding, edge cases
 ui/browser/
   BrowserViewModelTest.kt       — Turbine for state transitions + loadRequests SharedFlow
+web/
+  ExternalSchemeTest.kt         — pure: isInternal scheme classification (JVM-only)
+  ExternalSchemeFallbackTest.kt — Robolectric: intent: browser_fallback_url parsing
 util/
   MainDispatcherRule.kt         — sets Dispatchers.Main = UnconfinedTestDispatcher
 ```
 
-All JVM-only. Run with `./gradlew testDebugUnitTest`.
+Mostly JVM-only; `ExternalSchemeFallbackTest` needs Robolectric (real
+`Intent.parseUri`). Run with `./gradlew testDebugUnitTest`.
 
 ---
 
@@ -35,9 +39,12 @@ All JVM-only. Run with `./gradlew testDebugUnitTest`.
   machinery. The testable logic was pushed *out* of the WebView into
   `UrlNormalizer` and `BrowserViewModel` — test those instead. (See the
   global "pure logic lives outside Android-runtime classes" rule.)
-- **No Robolectric.** Nothing here needs Android runtime: `UrlNormalizer`
-  uses `java.net.URLEncoder` (pure JVM), the ViewModel touches no Android
-  types.
+- **Robolectric only where the Android runtime is genuinely needed.** Most
+  logic is pure (`UrlNormalizer` uses `java.net.URLEncoder`; the ViewModel
+  touches no Android types). The one exception is `ExternalSchemeFallbackTest`,
+  which exercises real `Intent.parseUri` — keep such tests in their own class
+  (`@RunWith(RobolectricTestRunner::class)`, `@Config(sdk = [36])`) so the pure
+  suites stay fast. Don't reach for Robolectric when a pure test will do.
 - **No androidTest source set.** No instrumented behaviour worth pinning.
 
 ---

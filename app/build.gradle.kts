@@ -43,7 +43,12 @@ android {
     }
 
     testOptions {
-        unitTests.isReturnDefaultValues = true
+        unitTests {
+            isReturnDefaultValues = true
+            // Robolectric needs the merged Android resources/assets on the test
+            // classpath (it boots a real-ish Android runtime for SDK 36).
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -67,4 +72,5 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    testImplementation(libs.robolectric)
 }
