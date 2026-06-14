@@ -11,8 +11,8 @@ android {
         applicationId = "com.github.reygnn.rechts"
         minSdk = 36                 // Android 16 only — no compat shims
         targetSdk = 36
-        versionCode = 12
-        versionName = "0.4.4"
+        versionCode = 13
+        versionName = "0.4.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
