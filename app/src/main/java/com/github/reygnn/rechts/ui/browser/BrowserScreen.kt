@@ -193,11 +193,19 @@ fun BrowserScreen(
     // crash → rebuild loop. Survives the WebView rebuilds (remember, not keyed).
     val crashReloadGate = remember { CrashReloadGate() }
 
+    // Throwaway capture WebViews spawned by onCreateWindow (popup handling).
+    // Tracked here so they're torn down together with the main WebView (mode
+    // switch / crash rebuild / leaving the screen) instead of lingering — and
+    // holding the Activity context — until their self-destruct timeout fires.
+    // Screen-scoped, not keyed on the WebView: only one main view is ever live,
+    // and its captures are cleared in the DisposableEffect(webView) below.
+    val captureWebViews = remember { mutableSetOf<WebView>() }
+
     // One WebView per mode (and per renderer-crash epoch): switching modes
     // recreates it bound to the other profile (normal = persistent default,
     // private = isolated, session-only).
     val webView = remember(isPrivate, webViewEpoch) {
-        createBrowserWebView(context, viewModel, isPrivate) {
+        createBrowserWebView(context, viewModel, isPrivate, captureWebViews) {
             // Reopen the page only while we're not in a crash loop; once the
             // gate trips, drop the crashing URL and let the first-load effect
             // fall back to the homepage with a notice.
@@ -361,6 +369,13 @@ fun BrowserScreen(
     // rather than relying on the AndroidView teardown order.
     DisposableEffect(webView) {
         onDispose {
+            // Destroy any popup-capture WebViews this main view spawned that
+            // haven't self-destructed yet, so they don't outlive it (holding the
+            // Activity context) until their timeout. Membership in the set is the
+            // single-owner token: whoever removes a WebView owns its destroy(),
+            // so the post/timeout paths below skip one already cleared here.
+            captureWebViews.forEach { it.destroy() }
+            captureWebViews.clear()
             (webView.parent as? ViewGroup)?.removeView(webView)
             webView.destroy()
         }
@@ -447,6 +462,7 @@ private fun createBrowserWebView(
     context: Context,
     viewModel: BrowserViewModel,
     privateMode: Boolean,
+    captureWebViews: MutableSet<WebView>,
     onRenderGone: () -> Unit,
 ): WebView {
     // Cheap throttle shared by the download + file-upload notices so a hostile
@@ -537,6 +553,8 @@ private fun createBrowserWebView(
             if (!isUserGesture) return false
             val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
             val href = WebView(view.context)
+            // Track for lifecycle teardown (see DisposableEffect(webView)).
+            captureWebViews.add(href)
             // Same jar as the main view: if this capture WebView ever did load
             // something, it must not spill into the persistent default profile
             // during a private session. It stays otherwise locked down (no
@@ -549,16 +567,25 @@ private fun createBrowserWebView(
                     inner: WebView,
                     request: WebResourceRequest,
                 ): Boolean {
-                    captured = true
                     val url = request.url.toString()
+                    // window.open() / window.open('about:blank') navigates the
+                    // popup to about:blank FIRST; that's not the real target.
+                    // Redirecting it into the main view would blank the user's
+                    // current page and discard the real URL the opener sets via
+                    // w.location afterwards. Let the (locked-down) capture view
+                    // load about:blank and keep waiting for the real navigation.
+                    if (url == "about:blank") return false
+                    captured = true
                     when {
                         ExternalScheme.isInternal(url) -> view.loadUrl(url)
                         ExternalScheme.dispatch(inner.context, url, fromWebContent = true) -> Unit
                         else -> ExternalScheme.fallbackUrl(url)?.let(view::loadUrl)
                     }
                     // The capture WebView has done its one job; tear it down off
-                    // the callback stack (destroy() mid-callback is unsafe).
-                    inner.post { inner.destroy() }
+                    // the callback stack (destroy() mid-callback is unsafe). The
+                    // set-membership check is the single-owner guard so the screen
+                    // tearing it down first can't cause a double destroy.
+                    inner.post { if (captureWebViews.remove(href)) inner.destroy() }
                     return true
                 }
             }
@@ -567,8 +594,12 @@ private fun createBrowserWebView(
             // Safety net against a popup that never triggers a navigation we can
             // capture (e.g. window.open() with no URL): without this the capture
             // WebView would leak, since it only self-destructs from inside the
-            // override above. No-op once it has done its job.
-            href.postDelayed({ if (!captured) href.destroy() }, CAPTURE_WEBVIEW_TIMEOUT_MS)
+            // override above. No-op once it has done its job (or the screen tore
+            // it down first — the membership check guards the double destroy).
+            href.postDelayed(
+                { if (!captured && captureWebViews.remove(href)) href.destroy() },
+                CAPTURE_WEBVIEW_TIMEOUT_MS,
+            )
             return true
         }
 
