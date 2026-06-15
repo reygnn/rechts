@@ -20,6 +20,12 @@ composeBom          = "2026.05.01"
 # (MULTI_PROFILE since 1.10.0). Project-specific, not part of the family core.
 webkit              = "1.12.1"
 
+# androidx.swiperefreshlayout — pull-to-refresh gesture around the WebView.
+# A View component (not Compose): a WebView in AndroidView emits no nested
+# scroll to Compose, so PullToRefreshBox can't see the pull; SwipeRefreshLayout
+# reads the WebView's own canScrollVertically(-1) and fires only at the top.
+swipeRefresh        = "1.1.0"
+
 # Testing (JVM baseline: JUnit 4 + MockK + Turbine + coroutines-test).
 # Robolectric only for the few tests that genuinely need the Android runtime
 # (e.g. Intent parsing in web/ExternalScheme) — see app/src/test/CLAUDE.md.
@@ -49,6 +55,7 @@ androidx-ui-tooling-preview          = { group = "androidx.compose.ui",        n
 androidx-material3                   = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 androidx-webkit                      = { group = "androidx.webkit",            name = "webkit",                      version.ref = "webkit" }
+androidx-swiperefreshlayout          = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout",         version.ref = "swipeRefresh" }
 
 junit                   = { group = "junit",                 name = "junit",                   version.ref = "junit" }
 mockk                   = { group = "io.mockk",              name = "mockk",                   version.ref = "mockk" }

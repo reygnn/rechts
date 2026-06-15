@@ -81,6 +81,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -95,6 +96,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
@@ -428,6 +430,33 @@ fun BrowserScreen(
         }
     }
 
+    // Pull-to-refresh host wrapping the WebView. One per WebView (mode switch /
+    // crash rebuild make a new one), so it always wraps the live instance. The
+    // gesture only fires at the top of the page — SwipeRefreshLayout consults the
+    // WebView's own canScrollVertically(-1) — and reload() keeps the WebView the
+    // source of truth for the page (hard rule 1).
+    val spinnerColor = MaterialTheme.colorScheme.primary.toArgb()
+    val swipeRefresh = remember(webView) {
+        SwipeRefreshLayout(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            setColorSchemeColors(spinnerColor)
+            setOnRefreshListener { webView.reload() }
+            addView(webView)
+        }
+    }
+
+    // Stop the spinner once the (re)load settles. The inline progress bar already
+    // shows ongoing progress, so the spinner only acknowledges the gesture until
+    // the page finishes; keyed on isLoading so it clears on the load's end, not
+    // on the gesture itself (which sets isRefreshing while isLoading is still
+    // false from the previous idle page).
+    LaunchedEffect(swipeRefresh, state.isLoading) {
+        if (!state.isLoading) swipeRefresh.isRefreshing = false
+    }
+
     Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->
         Column(Modifier.fillMaxSize()) {
             BrowserChrome(
@@ -475,10 +504,12 @@ fun BrowserScreen(
                     focusManager.clearFocus()
                 },
             )
-            // key(webView) so AndroidView swaps to the new instance on a mode switch.
+            // key(webView) so AndroidView swaps to the new instance on a mode
+            // switch. The pull-to-refresh host is the view tree's root here; the
+            // WebView is its single child.
             key(webView) {
                 AndroidView(
-                    factory = { webView },
+                    factory = { swipeRefresh },
                     // Bottom (navigation-bar) and side insets belong here; the
                     // chrome already consumes the top + side insets itself. The
                     // sides matter in landscape (gesture nav / display cutout).
