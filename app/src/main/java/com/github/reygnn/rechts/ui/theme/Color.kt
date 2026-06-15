@@ -83,3 +83,16 @@ val md_dark_inverseOnSurface = Color(0xFF191C1C)
 val md_dark_outline = Color(0xFF899393)
 val md_dark_outlineVariant = Color(0xFF3F4949)
 val md_dark_scrim = Color(0xFF000000)
+
+// ─────────────────────────────────────────────────────────────────────────
+// Private-mode chrome tint. Derived FROM the teal surfaceTint, not picked: take
+// the teal, keep its HSL saturation and lightness, rotate the hue from ~180°
+// (cyan) to ~305° (a warm violet-magenta on the opposite side of the wheel).
+// So the private bar reads at the same intensity as the normal "dark green"
+// bar — only the hue changes — and lands on a warm purple rather than a cool
+// lavender. Tints the top chrome / status bar only; the lock icon and every
+// other accent stay teal. One per mode, mirroring how surfaceTint flips
+// light↔dark (each keeps its own teal's S/L).
+// ─────────────────────────────────────────────────────────────────────────
+val md_light_privateTint = Color(0xFF6A0061) // #006A6A hue 180°→305° (S/L kept)
+val md_dark_privateTint = Color(0xFFDA4CCE)  // #4CDADA hue 180°→305° (S/L kept)

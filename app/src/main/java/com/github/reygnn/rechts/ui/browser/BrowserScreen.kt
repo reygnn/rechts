@@ -64,6 +64,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,6 +82,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -100,6 +102,8 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
+import com.github.reygnn.rechts.ui.theme.md_dark_privateTint
+import com.github.reygnn.rechts.ui.theme.md_light_privateTint
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
@@ -716,7 +720,24 @@ private fun BrowserChrome(
     onAddressFocusChanged: (Boolean) -> Unit,
     onAddressSubmit: () -> Unit,
 ) {
-    Surface(tonalElevation = 3.dp) {
+    // Top-chrome background — edge-to-edge, so it also paints behind the status
+    // bar. Normal mode tints the surface with the teal brand at elevation 3 (the
+    // pleasant "dark green" bar). Private mode swaps in a purple tint of the same
+    // intensity: same surface, same elevation overlay, only the hue differs — a
+    // calm privacy signal alongside the lock icon (which stays teal). The
+    // light/dark purple is picked the way surfaceTint itself flips, off the
+    // surface's own luminance.
+    val chromeColor = if (isPrivate) {
+        val tint = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
+            md_dark_privateTint
+        } else {
+            md_light_privateTint
+        }
+        MaterialTheme.colorScheme.copy(surfaceTint = tint).surfaceColorAtElevation(3.dp)
+    } else {
+        MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+    }
+    Surface(color = chromeColor) {
         // Top inset for the status bar plus the side insets (landscape gesture
         // nav / display cutout); the Surface background still spans edge-to-edge.
         Column(

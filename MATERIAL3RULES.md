@@ -169,12 +169,18 @@ deliberately neutral; almost everything reads from `surface`/`onSurface`.
 |--------------------------------------|---------------------------------------|
 | Brand (launcher icon, accents)       | `primary` (teal `#006A6A`)            |
 | Address bar / top chrome surface     | `surface` (tonalElevation lifts it)   |
+| Private-mode top chrome / status bar | `md_*_privateTint` (purple, same elev)|
 | Address-bar text & nav icons         | `onSurface` / `onSurfaceVariant`      |
 | Load progress bar                    | `primary` on `surfaceVariant` track   |
 | Disabled nav buttons                 | M3 default disabled alpha             |
 
-There are no project-specific named colour constants — the role set is
-enough for a single-screen browser. Never duplicate hex in screens.
+The only project-specific named colour constants are `md_light_privateTint`
+/ `md_dark_privateTint` in `ui/theme/Color.kt`: a purple counterpart to the
+teal `surfaceTint`, applied via the *same* elevation-3 overlay so the
+private chrome reads at the same intensity as the normal "dark green" bar —
+only the hue changes. They tint the top chrome only; the lock icon and every
+other accent stay teal `primary`. Otherwise the role set is enough for a
+single-screen browser — never duplicate hex in screens.
 
 ## B2. Documented hex exceptions
 
