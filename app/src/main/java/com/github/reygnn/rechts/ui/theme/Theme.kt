@@ -1,10 +1,13 @@
 package com.github.reygnn.rechts.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 private val LightColors = lightColorScheme(
     primary = md_light_primary,
@@ -83,6 +86,18 @@ private val DarkColors = darkColorScheme(
     outlineVariant = md_dark_outlineVariant,
     scrim = md_dark_scrim,
 )
+
+/**
+ * Private-mode chrome tint for [scheme], chosen the way `surfaceTint` itself flips
+ * light↔dark: off the surface's own luminance, so the private bar keeps the same
+ * intensity as the normal teal bar with only the hue shifted to warm purple.
+ *
+ * Single source for the light/dark selection — the raw [md_light_privateTint] /
+ * [md_dark_privateTint] are derived in Color.kt and callers never pick between them
+ * by hand. Pairs the definition (Color.kt) and the choice (here) in one concept.
+ */
+fun privateTintFor(scheme: ColorScheme): Color =
+    if (scheme.surface.luminance() < 0.5f) md_dark_privateTint else md_light_privateTint
 
 /**
  * App theme. Static teal brand scheme (no dynamic colour — see

@@ -72,6 +72,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.SaverScope
@@ -82,9 +83,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -98,12 +101,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.view.WindowCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.data.SettingsStore
 import com.github.reygnn.rechts.domain.UrlNormalizer
-import com.github.reygnn.rechts.ui.theme.md_dark_privateTint
-import com.github.reygnn.rechts.ui.theme.md_light_privateTint
+import com.github.reygnn.rechts.ui.theme.privateTintFor
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
@@ -722,21 +725,36 @@ private fun BrowserChrome(
 ) {
     // Top-chrome background — edge-to-edge, so it also paints behind the status
     // bar. Normal mode tints the surface with the teal brand at elevation 3 (the
-    // pleasant "dark green" bar). Private mode swaps in a purple tint of the same
-    // intensity: same surface, same elevation overlay, only the hue differs — a
-    // calm privacy signal alongside the lock icon (which stays teal). The
-    // light/dark purple is picked the way surfaceTint itself flips, off the
-    // surface's own luminance.
+    // pleasant "dark green" bar). Private mode reads as the same bar but in warm
+    // purple — a privacy signal alongside the lock icon (which stays teal). The
+    // light/dark purple comes from `privateTintFor`, picked the way surfaceTint
+    // itself flips, off the surface's own luminance.
+    val baseBar = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
     val chromeColor = if (isPrivate) {
-        val tint = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) {
-            md_dark_privateTint
-        } else {
-            md_light_privateTint
-        }
-        MaterialTheme.colorScheme.copy(surfaceTint = tint).surfaceColorAtElevation(3.dp)
+        // The bare elevation overlay (~8%) is too faint to read as a signal, so
+        // blend the private hue onto the base bar at a deliberately visible weight.
+        // Safe to push this hard because the status-bar icons below now track the
+        // resulting bar luminance instead of the system theme.
+        lerp(baseBar, privateTintFor(MaterialTheme.colorScheme), 0.18f)
     } else {
-        MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+        baseBar
     }
+
+    // The system status bar sits on top of [chromeColor] (edge-to-edge). Drive its
+    // icon (clock / battery) light-vs-dark appearance off the ACTUAL bar luminance,
+    // not the system day/night theme: otherwise a strongly tinted bar could end up
+    // with same-brightness, low-contrast icons. This decouples icon legibility from
+    // how bold the chrome tint is — the load-bearing half of the private-bar signal.
+    val view = LocalView.current
+    // True when the bar is light, which asks the system for DARK icons (and vice versa).
+    val lightStatusBar = chromeColor.luminance() > 0.5f
+    SideEffect {
+        view.context.findActivity()?.window?.let { window ->
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                lightStatusBar
+        }
+    }
+
     Surface(color = chromeColor) {
         // Top inset for the status bar plus the side insets (landscape gesture
         // nav / display cutout); the Surface background still spans edge-to-edge.
