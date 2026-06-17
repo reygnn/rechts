@@ -724,21 +724,22 @@ private fun BrowserChrome(
     onAddressSubmit: () -> Unit,
 ) {
     // Top-chrome background — edge-to-edge, so it also paints behind the status
-    // bar. Normal mode tints the surface with the teal brand at elevation 3 (the
-    // pleasant "dark green" bar). Private mode reads as the same bar but in warm
-    // purple — a privacy signal alongside the lock icon (which stays teal). The
-    // light/dark purple comes from `privateTintFor`, picked the way surfaceTint
-    // itself flips, off the surface's own luminance.
+    // bar. Both modes blend their hue onto the same base bar at the SAME weight,
+    // so normal (teal) and private (warm purple) read at identical brightness —
+    // only the hue differs, the private one being a privacy signal alongside the
+    // lock icon (which stays teal). The private tint is the teal rotated +125°
+    // with S/L preserved, so equal blend weights => equal lightness. The light/dark
+    // purple comes from `privateTintFor`, picked the way surfaceTint itself flips.
     val baseBar = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
-    val chromeColor = if (isPrivate) {
-        // The bare elevation overlay (~8%) is too faint to read as a signal, so
-        // blend the private hue onto the base bar at a deliberately visible weight.
-        // Safe to push this hard because the status-bar icons below now track the
-        // resulting bar luminance instead of the system theme.
-        lerp(baseBar, privateTintFor(MaterialTheme.colorScheme), 0.18f)
+    // 0.18 is deliberately stronger than the bare ~8% elevation overlay, which was
+    // too faint to read. Safe to push this hard because the status-bar icons below
+    // now track the resulting bar luminance instead of the system theme.
+    val barTint = if (isPrivate) {
+        privateTintFor(MaterialTheme.colorScheme)
     } else {
-        baseBar
+        MaterialTheme.colorScheme.surfaceTint
     }
+    val chromeColor = lerp(baseBar, barTint, 0.18f)
 
     // The system status bar sits on top of [chromeColor] (edge-to-edge). Drive its
     // icon (clock / battery) light-vs-dark appearance off the ACTUAL bar luminance,
