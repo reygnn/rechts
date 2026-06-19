@@ -19,8 +19,9 @@ object FavoritesOps {
      * Upper bound on the persisted list. A minimal browser doesn't need an
      * unbounded bookmark store; the cap also keeps the JSON blob small (mirrors
      * Kolibri_Launcher's order-list cap). Enforced on [encode], so a list that
-     * grows past it is trimmed (oldest first) when written, never silently in
-     * the middle of an operation.
+     * grows past it drops its OLDEST entries when written (favorites are
+     * appended newest-last, so a fresh save always wins over the stalest one),
+     * never silently in the middle of an operation.
      */
     const val MAX_FAVORITES = 100
 
@@ -58,9 +59,12 @@ object FavoritesOps {
         return favorites.toMutableList().apply { add(to, removeAt(from)) }
     }
 
-    /** Encode to the JSON blob stored in DataStore, trimmed to [MAX_FAVORITES]. */
+    /**
+     * Encode to the JSON blob stored in DataStore, trimmed to the newest
+     * [MAX_FAVORITES] (oldest dropped) so a save past the cap still sticks.
+     */
     fun encode(favorites: List<Favorite>): String =
-        json.encodeToString(favorites.take(MAX_FAVORITES))
+        json.encodeToString(favorites.takeLast(MAX_FAVORITES))
 
     /**
      * Decode the DataStore blob. Returns an empty list for blank or corrupt
@@ -72,7 +76,7 @@ object FavoritesOps {
         return try {
             json.decodeFromString<List<Favorite>>(blob)
                 .filter { it.url.isNotBlank() }
-                .take(MAX_FAVORITES)
+                .takeLast(MAX_FAVORITES)
         } catch (_: Exception) {
             emptyList()
         }

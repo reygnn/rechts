@@ -130,10 +130,13 @@ class FavoritesOpsTest {
     // ── cap ─────────────────────────────────────────────────────────────────
 
     @Test
-    fun `encode trims to the cap, keeping the oldest entries`() {
+    fun `encode trims to the cap, dropping the oldest entries`() {
+        // 0..MAX+10 inclusive = MAX+11 entries; the oldest 11 are dropped so a
+        // save past the cap still sticks (favorites are appended newest-last).
         val list = (0..FavoritesOps.MAX_FAVORITES + 10).map { fav("https://site$it.com") }
         val decoded = FavoritesOps.decode(FavoritesOps.encode(list))
         assertEquals(FavoritesOps.MAX_FAVORITES, decoded.size)
-        assertEquals(fav("https://site0.com"), decoded.first())
+        assertEquals(fav("https://site11.com"), decoded.first())
+        assertEquals(fav("https://site${FavoritesOps.MAX_FAVORITES + 10}.com"), decoded.last())
     }
 }
