@@ -485,82 +485,82 @@ fun BrowserScreen(
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
-        Column(Modifier.fillMaxSize()) {
-            BrowserChrome(
-                state = state,
-                isPrivate = isPrivate,
-                privateAvailable = privateAvailable,
-                isCurrentFavorite = isCurrentFavorite,
-                canFavorite = canFavorite,
-                onToggleFavorite = {
-                    favoritesScope.launch {
-                        favoritesStore.toggle(
-                            state.currentUrl,
-                            state.pageTitle.ifBlank { state.currentUrl },
-                        )
-                    }
-                },
-                onOpenFavorites = { showFavorites = true },
-                onBack = { webView.goBack() },
-                onForward = { webView.goForward() },
-                onReloadOrStop = {
-                    if (state.isLoading) {
-                        webView.stopLoading()
-                        // stopLoading() doesn't reliably push a final
-                        // onProgressChanged(100)/onPageFinished, so settle the
-                        // chrome ourselves — otherwise the progress bar and the
-                        // stop icon could stay stuck. onStopLoading() also
-                        // suppresses any trailing progress tick for the stopped
-                        // page so the bar can't flicker back in.
-                        viewModel.onStopLoading(webView.canGoBack(), webView.canGoForward())
-                    } else {
-                        webView.reload()
-                    }
-                },
-                onTogglePrivate = {
-                    val next = !isPrivate
-                    // Leaving normal mode: snapshot its history (in memory) on the
-                    // still-live WebView before it's rebuilt, so switching back
-                    // restores the page + back/forward stack. A private session is
-                    // never captured — it always reopens the homepage.
-                    if (!isPrivate) {
-                        val bundle = Bundle()
-                        normalHistory.bundle = bundle.takeIf { webView.saveState(it) != null }
-                    }
-                    isPrivate = next
-                    settings.privateMode = next
-                },
-                onSetDefaultBrowser = onSetDefaultBrowser,
-                onAddressChange = viewModel::onAddressChange,
-                onAddressClear = viewModel::onAddressClear,
-                onAddressFocusChanged = { focused ->
-                    addressFocused = focused
-                    viewModel.onAddressFocusChanged(focused)
-                },
-                onAddressSubmit = {
-                    viewModel.onAddressSubmit()
-                    focusManager.clearFocus()
-                },
-            )
-            // key(webView) so AndroidView swaps to the new instance on a mode
-            // switch. The pull-to-refresh host is the view tree's root here; the
-            // WebView is its single child.
-            key(webView) {
-                AndroidView(
-                    factory = { swipeRefresh },
-                    // Bottom (navigation-bar) and side insets belong here; the
-                    // chrome already consumes the top + side insets itself. The
-                    // sides matter in landscape (gesture nav / display cutout).
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(
-                            start = contentPadding.calculateStartPadding(layoutDirection),
-                            end = contentPadding.calculateEndPadding(layoutDirection),
-                            bottom = contentPadding.calculateBottomPadding(),
-                        ),
+            Column(Modifier.fillMaxSize()) {
+                BrowserChrome(
+                    state = state,
+                    isPrivate = isPrivate,
+                    privateAvailable = privateAvailable,
+                    isCurrentFavorite = isCurrentFavorite,
+                    canFavorite = canFavorite,
+                    onToggleFavorite = {
+                        favoritesScope.launch {
+                            favoritesStore.toggle(
+                                state.currentUrl,
+                                state.pageTitle.ifBlank { state.currentUrl },
+                            )
+                        }
+                    },
+                    onOpenFavorites = { showFavorites = true },
+                    onBack = { webView.goBack() },
+                    onForward = { webView.goForward() },
+                    onReloadOrStop = {
+                        if (state.isLoading) {
+                            webView.stopLoading()
+                            // stopLoading() doesn't reliably push a final
+                            // onProgressChanged(100)/onPageFinished, so settle the
+                            // chrome ourselves — otherwise the progress bar and the
+                            // stop icon could stay stuck. onStopLoading() also
+                            // suppresses any trailing progress tick for the stopped
+                            // page so the bar can't flicker back in.
+                            viewModel.onStopLoading(webView.canGoBack(), webView.canGoForward())
+                        } else {
+                            webView.reload()
+                        }
+                    },
+                    onTogglePrivate = {
+                        val next = !isPrivate
+                        // Leaving normal mode: snapshot its history (in memory) on the
+                        // still-live WebView before it's rebuilt, so switching back
+                        // restores the page + back/forward stack. A private session is
+                        // never captured — it always reopens the homepage.
+                        if (!isPrivate) {
+                            val bundle = Bundle()
+                            normalHistory.bundle = bundle.takeIf { webView.saveState(it) != null }
+                        }
+                        isPrivate = next
+                        settings.privateMode = next
+                    },
+                    onSetDefaultBrowser = onSetDefaultBrowser,
+                    onAddressChange = viewModel::onAddressChange,
+                    onAddressClear = viewModel::onAddressClear,
+                    onAddressFocusChanged = { focused ->
+                        addressFocused = focused
+                        viewModel.onAddressFocusChanged(focused)
+                    },
+                    onAddressSubmit = {
+                        viewModel.onAddressSubmit()
+                        focusManager.clearFocus()
+                    },
                 )
+                // key(webView) so AndroidView swaps to the new instance on a mode
+                // switch. The pull-to-refresh host is the view tree's root here; the
+                // WebView is its single child.
+                key(webView) {
+                    AndroidView(
+                        factory = { swipeRefresh },
+                        // Bottom (navigation-bar) and side insets belong here; the
+                        // chrome already consumes the top + side insets itself. The
+                        // sides matter in landscape (gesture nav / display cutout).
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(
+                                start = contentPadding.calculateStartPadding(layoutDirection),
+                                end = contentPadding.calculateEndPadding(layoutDirection),
+                                bottom = contentPadding.calculateBottomPadding(),
+                            ),
+                    )
+                }
             }
-        }
         }
 
         // Favorites overlay: drawn on top of the (still-composed) browser, so
