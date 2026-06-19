@@ -18,10 +18,11 @@ object FavoritesOps {
     /**
      * Upper bound on the persisted list. A minimal browser doesn't need an
      * unbounded bookmark store; the cap also keeps the JSON blob small (mirrors
-     * Kolibri_Launcher's order-list cap). Enforced on [encode], so a list that
-     * grows past it drops its OLDEST entries when written (favorites are
-     * appended newest-last, so a fresh save always wins over the stalest one),
-     * never silently in the middle of an operation.
+     * Kolibri_Launcher's order-list cap). Enforced at the serialization boundary
+     * — both [encode] (write) and [decode] (read, defensive against a blob from
+     * an older/larger build) — so a list that grows past it drops its OLDEST
+     * entries (favorites are appended newest-last, so a fresh save always wins
+     * over the stalest one), never silently in the middle of an operation.
      */
     const val MAX_FAVORITES = 100
 

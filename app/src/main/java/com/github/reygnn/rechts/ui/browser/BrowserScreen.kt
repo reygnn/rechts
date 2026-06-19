@@ -479,9 +479,12 @@ fun BrowserScreen(
         if (!state.isLoading) swipeRefresh.isRefreshing = false
     }
 
-    // Current page is favoritable only once it has a real URL.
+    // Current page is favoritable only once it has a real URL. The list scan is
+    // memoized so it doesn't re-run on every progress-tick recomposition.
     val canFavorite = state.currentUrl.isNotBlank()
-    val isCurrentFavorite = canFavorite && FavoritesOps.isFavorite(favorites, state.currentUrl)
+    val isCurrentFavorite = remember(favorites, state.currentUrl) {
+        canFavorite && FavoritesOps.isFavorite(favorites, state.currentUrl)
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
@@ -493,11 +496,14 @@ fun BrowserScreen(
                     isCurrentFavorite = isCurrentFavorite,
                     canFavorite = canFavorite,
                     onToggleFavorite = {
+                        // Read the title straight off the live WebView at save
+                        // time — that's always the freshest value, with no
+                        // mirrored-state window where favoriting saves the URL
+                        // as the name. Fall back to the URL when it's blank.
+                        val title = webView.title?.takeIf { it.isNotBlank() }
+                            ?: state.currentUrl
                         favoritesScope.launch {
-                            favoritesStore.toggle(
-                                state.currentUrl,
-                                state.pageTitle.ifBlank { state.currentUrl },
-                            )
+                            favoritesStore.toggle(state.currentUrl, title)
                         }
                     },
                     onOpenFavorites = { showFavorites = true },
@@ -656,11 +662,6 @@ private fun createBrowserWebView(
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             viewModel.onProgressChanged(newProgress)
-        }
-
-        // The page's title — used as the display name when it's favorited.
-        override fun onReceivedTitle(view: WebView, title: String) {
-            viewModel.onPageTitle(title)
         }
 
         // A page asked to open a new window (target="_blank" or window.open).

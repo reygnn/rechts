@@ -42,6 +42,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.github.reygnn.rechts.R
 import com.github.reygnn.rechts.domain.Favorite
+import com.github.reygnn.rechts.domain.FavoritesOps
 import com.github.reygnn.rechts.ui.theme.RechtsTheme
 
 /**
@@ -175,6 +176,9 @@ private class FavoritesDragCallback(
     private val onReordered: (List<Favorite>) -> Unit,
 ) : ItemTouchHelper.SimpleCallback(ItemTouchHelper.UP or ItemTouchHelper.DOWN, 0) {
 
+    /** Whether this gesture actually reordered anything (vs a pick-up-and-drop). */
+    private var moved = false
+
     override fun isLongPressDragEnabled(): Boolean = false
 
     override fun onMove(
@@ -186,19 +190,35 @@ private class FavoritesDragCallback(
         val to = target.bindingAdapterPosition
         if (from == RecyclerView.NO_POSITION || to == RecyclerView.NO_POSITION) return false
         adapter.moveItem(from, to)
+        moved = true
         return true
     }
 
     override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
         super.onSelectedChanged(viewHolder, actionState)
-        // Fade the dragged row, matching Kolibri_Launcher's drag feedback.
-        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) viewHolder?.itemView?.alpha = 0.7f
+        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG) {
+            // Latch submit off for the whole gesture: the live WebView underneath
+            // keeps emitting state and recomposing this list, and a stale flow
+            // value must not notifyDataSetChanged() under the active drag.
+            adapter.suppressSubmit = true
+            moved = false
+            // Fade the dragged row, matching Kolibri_Launcher's drag feedback.
+            viewHolder?.itemView?.alpha = 0.7f
+        }
     }
 
     override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
         super.clearView(recyclerView, viewHolder)
         viewHolder.itemView.alpha = 1f
-        onReordered(adapter.currentOrder())
+        if (moved) {
+            // Persist once. The latch stays on until the flow echoes this exact
+            // order back (released in submit), so an intermediate stale emission
+            // can't briefly revert the just-dropped order.
+            onReordered(adapter.currentOrder())
+        } else {
+            // Nothing moved — no write, release the latch immediately.
+            adapter.suppressSubmit = false
+        }
     }
 
     override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) = Unit
@@ -218,21 +238,39 @@ private class FavoritesAdapter(
     private val items = mutableListOf<Favorite>()
 
     /**
-     * Replace the list from the DataStore flow. A drop persists the new order,
-     * which the flow then echoes back identically — short-circuit that so the
-     * echo doesn't `notifyDataSetChanged()` and interrupt the drag animation.
+     * Suppresses [submit] for the duration of a drag and until the persisted
+     * order echoes back through the flow (set/cleared by [FavoritesDragCallback]).
+     * Without it, the still-live WebView underneath recomposes this list mid-drag
+     * and a stale flow value would `notifyDataSetChanged()` under the active drag.
+     */
+    var suppressSubmit = false
+
+    /**
+     * Replace the list from the DataStore flow. While a drag is in flight the
+     * latch holds; the echo that exactly matches the on-screen order releases it
+     * (and is itself a no-op). Any other change is applied normally.
      */
     fun submit(new: List<Favorite>) {
-        if (items == new) return
+        if (items == new) {
+            suppressSubmit = false
+            return
+        }
+        if (suppressSubmit) return
         items.clear()
         items.addAll(new)
         notifyDataSetChanged()
     }
 
-    /** Live reorder during a drag; persisted on drop via [currentOrder]. */
+    /**
+     * Live reorder during a drag; persisted on drop via [currentOrder]. Routes
+     * through the pure, JVM-tested [FavoritesOps.move] so the shipped reorder and
+     * its tests share one implementation. A no-op move returns the same list.
+     */
     fun moveItem(from: Int, to: Int) {
-        if (from !in items.indices || to !in items.indices) return
-        items.add(to, items.removeAt(from))
+        val reordered = FavoritesOps.move(items, from, to)
+        if (reordered === items) return
+        items.clear()
+        items.addAll(reordered)
         notifyItemMoved(from, to)
     }
 
