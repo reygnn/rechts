@@ -196,7 +196,9 @@ fun BrowserScreen(
     val favoritesStore = remember { FavoritesStore(context) }
     val favorites by favoritesStore.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
     val favoritesScope = rememberCoroutineScope()
-    var showFavorites by rememberSaveable { mutableStateOf(false) }
+    // Not rememberSaveable on purpose: after process death we start in the
+    // browser over the restoring WebView, not reopened on top of it.
+    var showFavorites by remember { mutableStateOf(false) }
 
     // Private mode is only real when the platform WebView supports isolated
     // profiles. Without that, binding "private" browsing to the default profile
