@@ -13,9 +13,19 @@
 
     <!-- Overflow menu -->
     <string name="menu_more">Weitere Optionen</string>
+    <string name="menu_add_favorite">Zu Favoriten hinzufügen</string>
+    <string name="menu_remove_favorite">Aus Favoriten entfernen</string>
+    <string name="menu_favorites">Favoriten</string>
     <string name="menu_private_mode">Privater Modus</string>
     <string name="menu_set_default">Als Standardbrowser festlegen</string>
     <string name="already_default">rechts ist bereits dein Standardbrowser</string>
+
+    <!-- Favorites screen -->
+    <string name="favorites_title">Favoriten</string>
+    <string name="favorites_back">Zurück</string>
+    <string name="favorites_empty">Noch keine Favoriten. Tippe auf den Stern, um die aktuelle Seite zu speichern.</string>
+    <string name="favorite_remove">Entfernen</string>
+    <string name="favorite_reorder">Zum Umsortieren ziehen</string>
 
     <!-- Private mode indicator (address bar) -->
     <string name="private_active">Privater Modus aktiv</string>

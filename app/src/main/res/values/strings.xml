@@ -13,9 +13,19 @@
 
     <!-- Overflow menu -->
     <string name="menu_more">More options</string>
+    <string name="menu_add_favorite">Add to favorites</string>
+    <string name="menu_remove_favorite">Remove from favorites</string>
+    <string name="menu_favorites">Favorites</string>
     <string name="menu_private_mode">Private mode</string>
     <string name="menu_set_default">Set as default browser</string>
     <string name="already_default">rechts is already your default browser</string>
+
+    <!-- Favorites screen -->
+    <string name="favorites_title">Favorites</string>
+    <string name="favorites_back">Back</string>
+    <string name="favorites_empty">No favorites yet. Tap the star to save the current page.</string>
+    <string name="favorite_remove">Remove</string>
+    <string name="favorite_reorder">Drag to reorder</string>
 
     <!-- Private mode indicator (address bar) -->
     <string name="private_active">Private mode active</string>

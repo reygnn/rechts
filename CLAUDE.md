@@ -27,12 +27,16 @@ It does:
 - show load progress,
 - open `http`/`https` links from other apps (can be set as the default
   browser; an overflow menu offers an in-app "set as default" prompt),
-- offer an optional, profile-isolated private mode (overflow menu).
+- offer an optional, profile-isolated private mode (overflow menu),
+- save the current page to a small, persistent favorites list (overflow-menu
+  star) and reopen/reorder/delete favorites on a dedicated drag-and-drop
+  favorites screen (overflow-menu "Favorites").
 
 It deliberately does **not** have (each is a new feature category that needs
 explicit user agreement before being built):
 - tabs,
-- bookmarks or history persistence,
+- **history** persistence (favorites are a deliberate, minimal exception — a
+  flat saved-pages list, *not* automatic history; don't grow it into history),
 - downloads, find-in-page, settings screen,
 - a custom rendering engine — it wraps the platform `WebView`. That's the
   only realistic option and it's the whole point of "minimal".
@@ -41,12 +45,18 @@ explicit user agreement before being built):
 
 ## Stack particulars
 
-Almost baseline. The browser is the platform `android.webkit.WebView`. Two
+Almost baseline. The browser is the platform `android.webkit.WebView`. The
 project-specific bits:
 - **`androidx.webkit`** — its `Profile` API gives the optional private mode a
   cookie/storage jar that's isolated from normal browsing.
 - **SharedPreferences** (one boolean: the remembered browsing mode) — DataStore
   would be overkill for a single value.
+- **DataStore Preferences + kotlinx.serialization** — the favorites list,
+  stored as one JSON blob (more than the single boolean, so DataStore per the
+  family persistence rule). The codec/list logic is pure (`domain/FavoritesOps`).
+- **`androidx.recyclerview`** — drag-to-reorder favorites via `ItemTouchHelper`
+  (the proven Kolibri_Launcher mechanism), hosted in an `AndroidView`; rows are
+  per-item `ComposeView`s so there's no XML item layout.
 
 No Room, no DI framework, no custom `Application` class.
 
@@ -55,22 +65,27 @@ No Room, no DI framework, no custom `Application` class.
 ## Architecture
 
 Single Gradle module (`:app`). The `WebView` owns the page; a tiny ViewModel
-mirrors only the chrome state. No repository layer — there's no data to
-persist.
+mirrors only the chrome state. The only persisted data is the chosen browsing
+mode (SharedPreferences) and the favorites list (DataStore).
 
 ```
 com.github.reygnn.rechts/
   ui/
     MainActivity.kt              — ComponentActivity (singleTask), edge-to-edge, hosts BrowserScreen; wipes private profile on cold start; routes inbound VIEW intents (onCreate + onNewIntent)
     browser/
-      BrowserScreen.kt           — Compose chrome + AndroidView(SwipeRefreshLayout→WebView, pull-to-refresh); overflow menu (back/forward/reload row, private toggle, set-default); wires WebViewClient/ChromeClient → VM
-      BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests (also openExternalUrl for inbound links)
-      BrowserUiState.kt          — chrome state (address, progress, history flags)
+      BrowserScreen.kt           — Compose chrome + AndroidView(SwipeRefreshLayout→WebView, pull-to-refresh); overflow menu (back/forward/reload row, favorite star + Favorites, private toggle, set-default); hosts the favorites overlay on top (WebView stays alive); wires WebViewClient/ChromeClient → VM
+      BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests (also openExternalUrl for inbound links + favorites); onPageTitle from onReceivedTitle
+      BrowserUiState.kt          — chrome state (address, page title, progress, history flags)
+    favorites/
+      FavoritesScreen.kt         — full-screen Compose overlay; RecyclerView+ItemTouchHelper (via AndroidView) drag-reorder list with per-row ComposeViews; tap opens, drag-handle reorders, X deletes
     theme/                       — RechtsTheme, static teal Color palette
   domain/
     UrlNormalizer.kt             — pure: typed text → URL or DuckDuckGo search
+    Favorite.kt                  — @Serializable (url, title); favorites are identified by url
+    FavoritesOps.kt              — pure: add/remove/toggle/move + JSON encode/decode + cap (JVM-tested, like UrlNormalizer)
   data/
     SettingsStore.kt             — SharedPreferences; remembers the browsing mode
+    FavoritesStore.kt            — DataStore Preferences; favorites Flow + suspend toggle/remove/saveOrder (thin wrapper over FavoritesOps); shared across normal & private (never wiped)
   web/
     WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + per-profile cookie policy + private wipe
     ExternalScheme.kt            — pure scheme check + Intent dispatch for non-http(s) links (mailto:, tel:, intent:, …)

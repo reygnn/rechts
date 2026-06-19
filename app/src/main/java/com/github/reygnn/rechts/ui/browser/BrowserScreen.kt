@@ -74,6 +74,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.SaverScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -90,6 +91,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.input.ImeAction
@@ -104,12 +106,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import com.github.reygnn.rechts.R
+import com.github.reygnn.rechts.data.FavoritesStore
 import com.github.reygnn.rechts.data.SettingsStore
+import com.github.reygnn.rechts.domain.FavoritesOps
 import com.github.reygnn.rechts.domain.UrlNormalizer
+import com.github.reygnn.rechts.ui.favorites.FavoritesScreen
 import com.github.reygnn.rechts.ui.theme.privateTintFor
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
+import kotlinx.coroutines.launch
 
 private const val TAG = "BrowserScreen"
 
@@ -182,6 +188,15 @@ fun BrowserScreen(
     // across configuration changes. Toggling it persists the choice and (via
     // remember(isPrivate) below) rebuilds the WebView on the right profile.
     val settings = remember { SettingsStore(context) }
+
+    // Favorites: one shared, persistent list (DataStore JSON blob). Collected
+    // here so the overflow star reflects whether the current page is saved. The
+    // favorites screen is shown as an overlay on top of the browser (not a
+    // screen swap), so the live WebView stays composed underneath.
+    val favoritesStore = remember { FavoritesStore(context) }
+    val favorites by favoritesStore.favorites.collectAsStateWithLifecycle(initialValue = emptyList())
+    val favoritesScope = rememberCoroutineScope()
+    var showFavorites by rememberSaveable { mutableStateOf(false) }
 
     // Private mode is only real when the platform WebView supports isolated
     // profiles. Without that, binding "private" browsing to the default profile
@@ -464,12 +479,28 @@ fun BrowserScreen(
         if (!state.isLoading) swipeRefresh.isRefreshing = false
     }
 
-    Scaffold(modifier = modifier.fillMaxSize()) { contentPadding ->
+    // Current page is favoritable only once it has a real URL.
+    val canFavorite = state.currentUrl.isNotBlank()
+    val isCurrentFavorite = canFavorite && FavoritesOps.isFavorite(favorites, state.currentUrl)
+
+    Box(modifier = modifier.fillMaxSize()) {
+        Scaffold(modifier = Modifier.fillMaxSize()) { contentPadding ->
         Column(Modifier.fillMaxSize()) {
             BrowserChrome(
                 state = state,
                 isPrivate = isPrivate,
                 privateAvailable = privateAvailable,
+                isCurrentFavorite = isCurrentFavorite,
+                canFavorite = canFavorite,
+                onToggleFavorite = {
+                    favoritesScope.launch {
+                        favoritesStore.toggle(
+                            state.currentUrl,
+                            state.pageTitle.ifBlank { state.currentUrl },
+                        )
+                    }
+                },
+                onOpenFavorites = { showFavorites = true },
                 onBack = { webView.goBack() },
                 onForward = { webView.goForward() },
                 onReloadOrStop = {
@@ -529,6 +560,24 @@ fun BrowserScreen(
                         ),
                 )
             }
+        }
+        }
+
+        // Favorites overlay: drawn on top of the (still-composed) browser, so
+        // the WebView keeps its page alive while the list is open. Opening a
+        // favorite closes the overlay and loads the URL as-is (no normalization,
+        // like an inbound link) in whichever mode is active.
+        if (showFavorites) {
+            FavoritesScreen(
+                favorites = favorites,
+                onOpenUrl = { url ->
+                    showFavorites = false
+                    viewModel.openExternalUrl(url)
+                },
+                onRemove = { url -> favoritesScope.launch { favoritesStore.remove(url) } },
+                onReorder = { ordered -> favoritesScope.launch { favoritesStore.saveOrder(ordered) } },
+                onClose = { showFavorites = false },
+            )
         }
     }
 }
@@ -607,6 +656,11 @@ private fun createBrowserWebView(
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, newProgress: Int) {
             viewModel.onProgressChanged(newProgress)
+        }
+
+        // The page's title — used as the display name when it's favorited.
+        override fun onReceivedTitle(view: WebView, title: String) {
+            viewModel.onPageTitle(title)
         }
 
         // A page asked to open a new window (target="_blank" or window.open).
@@ -713,6 +767,10 @@ private fun BrowserChrome(
     state: BrowserUiState,
     isPrivate: Boolean,
     privateAvailable: Boolean,
+    isCurrentFavorite: Boolean,
+    canFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenFavorites: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -786,6 +844,10 @@ private fun BrowserChrome(
                     state = state,
                     isPrivate = isPrivate,
                     privateAvailable = privateAvailable,
+                    isCurrentFavorite = isCurrentFavorite,
+                    canFavorite = canFavorite,
+                    onToggleFavorite = onToggleFavorite,
+                    onOpenFavorites = onOpenFavorites,
                     onBack = onBack,
                     onForward = onForward,
                     onReloadOrStop = onReloadOrStop,
@@ -814,6 +876,10 @@ private fun OverflowMenu(
     state: BrowserUiState,
     isPrivate: Boolean,
     privateAvailable: Boolean,
+    isCurrentFavorite: Boolean,
+    canFavorite: Boolean,
+    onToggleFavorite: () -> Unit,
+    onOpenFavorites: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -854,6 +920,42 @@ private fun OverflowMenu(
                     }
                 }
             }
+            HorizontalDivider()
+            // Star the current page (filled = already saved). Disabled until the
+            // page has a real URL.
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        stringResource(
+                            if (isCurrentFavorite) R.string.menu_remove_favorite
+                            else R.string.menu_add_favorite,
+                        ),
+                    )
+                },
+                onClick = {
+                    expanded = false
+                    onToggleFavorite()
+                },
+                enabled = canFavorite,
+                leadingIcon = {
+                    Icon(
+                        painter = painterResource(
+                            if (isCurrentFavorite) R.drawable.ic_star else R.drawable.ic_star_border,
+                        ),
+                        contentDescription = null,
+                    )
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.menu_favorites)) },
+                onClick = {
+                    expanded = false
+                    onOpenFavorites()
+                },
+                leadingIcon = {
+                    Icon(painterResource(R.drawable.ic_star), contentDescription = null)
+                },
+            )
             HorizontalDivider()
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.menu_private_mode)) },

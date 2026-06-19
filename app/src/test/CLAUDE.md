@@ -17,6 +17,7 @@ records the project's choices on top of that baseline.
 ```
 domain/
   UrlNormalizerTest.kt          — pure address-bar logic: URL vs search, encoding, edge cases
+  FavoritesOpsTest.kt           — pure favorites logic: toggle/dedup/remove/move + JSON round-trip/corrupt/cap
 ui/browser/
   BrowserViewModelTest.kt       — Turbine for state transitions + loadRequests SharedFlow
   MinIntervalGateTest.kt        — pure: toast-throttle gate (time passed in, no SystemClock)

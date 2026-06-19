@@ -160,11 +160,19 @@ class BrowserViewModel : ViewModel() {
             it.copy(
                 currentUrl = url,
                 addressText = if (addressBarFocused) it.addressText else url,
+                // Drop the previous page's title until this one reports its own
+                // (via onPageTitle), so favoriting mid-load can't save a stale name.
+                pageTitle = "",
                 progress = 0,
                 canGoBack = canGoBack,
                 canGoForward = canGoForward,
             )
         }
+    }
+
+    /** The loaded page reported its title (`WebView.onReceivedTitle`). */
+    fun onPageTitle(title: String) {
+        _uiState.update { it.copy(pageTitle = title) }
     }
 
     fun onProgressChanged(progress: Int) {

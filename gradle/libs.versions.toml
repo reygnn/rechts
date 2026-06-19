@@ -26,6 +26,19 @@ webkit              = "1.12.1"
 # reads the WebView's own canScrollVertically(-1) and fires only at the top.
 swipeRefresh        = "1.1.0"
 
+# androidx.datastore — persists the favorites list as one JSON blob. More than
+# the single boolean SettingsStore keeps in SharedPreferences, so DataStore is
+# the right tool per the family persistence baseline (~/.claude/CLAUDE.md).
+datastore           = "1.1.7"
+
+# kotlinx.serialization — encodes/decodes the favorites list to/from the JSON
+# blob. Used purely in domain/FavoritesOps so the codec stays JVM-unit-testable.
+serialization       = "1.9.0"
+
+# androidx.recyclerview — drag-to-reorder favorites via ItemTouchHelper, the
+# same proven mechanism Kolibri_Launcher uses, hosted here inside an AndroidView.
+recyclerview        = "1.4.0"
+
 # Testing (JVM baseline: JUnit 4 + MockK + Turbine + coroutines-test).
 # Robolectric only for the few tests that genuinely need the Android runtime
 # (e.g. Intent parsing in web/ExternalScheme) — see app/src/test/CLAUDE.md.
@@ -56,6 +69,9 @@ androidx-material3                   = { group = "androidx.compose.material3", n
 androidx-compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 androidx-webkit                      = { group = "androidx.webkit",            name = "webkit",                      version.ref = "webkit" }
 androidx-swiperefreshlayout          = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout",         version.ref = "swipeRefresh" }
+androidx-datastore-preferences       = { group = "androidx.datastore",         name = "datastore-preferences",       version.ref = "datastore" }
+androidx-recyclerview                = { group = "androidx.recyclerview",       name = "recyclerview",                version.ref = "recyclerview" }
+kotlinx-serialization-json           = { group = "org.jetbrains.kotlinx",       name = "kotlinx-serialization-json",  version.ref = "serialization" }
 
 junit                   = { group = "junit",                 name = "junit",                   version.ref = "junit" }
 mockk                   = { group = "io.mockk",              name = "mockk",                   version.ref = "mockk" }
@@ -67,5 +83,6 @@ androidx-test-runner    = { group = "androidx.test",          name = "runner",  
 
 [plugins]
 # AGP 9 ships Kotlin built-in — NO external org.jetbrains.kotlin.android plugin.
-android-application = { id = "com.android.application",             version.ref = "agp" }
-kotlin-compose      = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+android-application  = { id = "com.android.application",                   version.ref = "agp" }
+kotlin-compose       = { id = "org.jetbrains.kotlin.plugin.compose",       version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
