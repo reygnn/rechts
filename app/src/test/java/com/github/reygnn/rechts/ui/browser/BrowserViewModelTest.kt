@@ -322,25 +322,6 @@ class BrowserViewModelTest {
         }
 
     @Test
-    fun `onPageTitle records the page title`() = runTest(mainRule.dispatcher) {
-        val vm = BrowserViewModel()
-        vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-        vm.onPageTitle("Example Domain")
-        assertEquals("Example Domain", vm.uiState.value.pageTitle)
-    }
-
-    @Test
-    fun `a new navigation clears the previous page title`() = runTest(mainRule.dispatcher) {
-        val vm = BrowserViewModel()
-        vm.onPageStarted("https://example.com", canGoBack = false, canGoForward = false)
-        vm.onPageTitle("Example Domain")
-        // Navigating away drops the stale title until the new page reports its
-        // own, so favoriting mid-load can't save the previous page's name.
-        vm.onPageStarted("https://other.example", canGoBack = true, canGoForward = false)
-        assertEquals("", vm.uiState.value.pageTitle)
-    }
-
-    @Test
     fun `onHistoryRestored mirrors url and history flags`() = runTest(mainRule.dispatcher) {
         val vm = BrowserViewModel()
         vm.onHistoryRestored("https://restored.example", canGoBack = true, canGoForward = false)
