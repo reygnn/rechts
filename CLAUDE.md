@@ -30,14 +30,16 @@ It does:
 - offer an optional, profile-isolated private mode (overflow menu),
 - save the current page to a small, persistent favorites list (overflow-menu
   star) and reopen/reorder/delete favorites on a dedicated drag-and-drop
-  favorites screen (overflow-menu "Favorites").
+  favorites screen (overflow-menu "Favorites"),
+- hand file downloads off to the system `DownloadManager` (no in-app download
+  UI — the OS fetches to `Downloads/` with its own notification).
 
 It deliberately does **not** have (each is a new feature category that needs
 explicit user agreement before being built):
 - tabs,
 - **history** persistence (favorites are a deliberate, minimal exception — a
   flat saved-pages list, *not* automatic history; don't grow it into history),
-- downloads, find-in-page, settings screen,
+- find-in-page, settings screen,
 - a custom rendering engine — it wraps the platform `WebView`. That's the
   only realistic option and it's the whole point of "minimal".
 
@@ -87,8 +89,9 @@ com.github.reygnn.rechts/
     SettingsStore.kt             — SharedPreferences; remembers the browsing mode
     FavoritesStore.kt            — DataStore Preferences; favorites Flow + suspend toggle/remove/saveOrder (thin wrapper over FavoritesOps); shared across normal & private (never wiped)
   web/
-    WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + per-profile cookie policy + private wipe
+    WebViewConfig.kt             — WebView settings + profile binding (normal vs private) + per-profile cookie policy (incl. cookieFor for downloads) + private wipe
     ExternalScheme.kt            — pure scheme check + Intent dispatch for non-http(s) links (mailto:, tel:, intent:, …)
+    DownloadHandler.kt           — pure isEnqueueable (http(s) only) + enqueue to system DownloadManager (cookies/UA forwarded); JVM-tested like ExternalScheme
 ```
 
 Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
@@ -190,6 +193,18 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    the privacy core. Don't add a "remember the private page across launches /
    mode switches" path; equally, don't force inbound links or crash recovery to
    the homepage.
+9. **Downloads go to the system `DownloadManager`, never an in-app downloader.**
+   rechts has no download UI: `setDownloadListener` hands the file off to the OS
+   (`web/DownloadHandler`), which fetches it to public `Downloads/` with its own
+   notification — no storage permission needed (DownloadManager is exempt for
+   that directory). Only `http(s)` is enqueueable (`isEnqueueable`, pure +
+   JVM-tested); a `blob:`/`data:` download has no fetchable URL and falls back to
+   the "unsupported" notice. The page's cookies + user-agent are forwarded so a
+   logged-in download authenticates, and in private mode the cookies come from
+   the **isolated** profile's jar (`WebViewConfig.cookieFor`), never the default
+   one. Accepted privacy trade-off: a private-mode download still lands in public
+   storage and rides the system DownloadManager — inherent to "download", same as
+   every browser. Don't build a custom download manager, list, or history.
 
 ---
 

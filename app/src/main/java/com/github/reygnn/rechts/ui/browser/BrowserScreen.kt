@@ -112,6 +112,7 @@ import com.github.reygnn.rechts.domain.FavoritesOps
 import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.ui.favorites.FavoritesScreen
 import com.github.reygnn.rechts.ui.theme.privateTintFor
+import com.github.reygnn.rechts.web.DownloadHandler
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
@@ -119,8 +120,8 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "BrowserScreen"
 
-/** Minimum spacing between repeated "unsupported" toasts (download / file upload). */
-private const val UNSUPPORTED_TOAST_MIN_INTERVAL_MS = 3_000L
+/** Minimum spacing between repeated chrome notices (download started/unsupported, file upload). */
+private const val NOTICE_TOAST_MIN_INTERVAL_MS = 3_000L
 
 /**
  * Grace period after which the throwaway onCreateWindow capture WebView is torn
@@ -599,8 +600,8 @@ private fun createBrowserWebView(
 ): WebView {
     // Cheap throttle shared by the download + file-upload notices so a hostile
     // page that auto-fires either in a loop can't flood the screen with toasts.
-    val noticeGate = MinIntervalGate(UNSUPPORTED_TOAST_MIN_INTERVAL_MS)
-    fun notifyUnsupported(ctx: Context, messageRes: Int) {
+    val noticeGate = MinIntervalGate(NOTICE_TOAST_MIN_INTERVAL_MS)
+    fun showNotice(ctx: Context, messageRes: Int) {
         if (!noticeGate.accept(SystemClock.uptimeMillis())) return
         Toast.makeText(ctx, messageRes, Toast.LENGTH_SHORT).show()
     }
@@ -749,15 +750,25 @@ private fun createBrowserWebView(
             fileChooserParams: FileChooserParams,
         ): Boolean {
             filePathCallback.onReceiveValue(null)
-            notifyUnsupported(context, R.string.file_upload_unsupported)
+            showNotice(context, R.string.file_upload_unsupported)
             return true
         }
     }
 
-    // Downloads are out of scope (CLAUDE.md). Don't fail silently on a download
-    // link — let the user know nothing will happen.
-    setDownloadListener { _, _, _, _, _ ->
-        notifyUnsupported(context, R.string.download_unsupported)
+    // A download (Content-Disposition: attachment, or a MIME type the WebView
+    // can't render) is handed to the system DownloadManager, which fetches it to
+    // the public Downloads folder with its own progress/"done" notification. The
+    // page's cookies + user-agent ride along so a logged-in download works
+    // (private mode reads the isolated profile's jar). http(s) only — a
+    // blob:/data: download has no fetchable URL, so fall back to the
+    // "unsupported" notice rather than failing silently.
+    setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+        val cookie = WebViewConfig.cookieFor(url, privateMode)
+        if (DownloadHandler.enqueue(context, url, userAgent, contentDisposition, mimeType, cookie)) {
+            showNotice(context, R.string.download_started)
+        } else {
+            showNotice(context, R.string.download_unsupported)
+        }
     }
 
     // Bind the profile (private vs default) BEFORE the WebView loads anything.

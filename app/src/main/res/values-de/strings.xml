@@ -30,8 +30,11 @@
     <!-- Private mode indicator (address bar) -->
     <string name="private_active">Privater Modus aktiv</string>
 
+    <!-- Download handed to the system DownloadManager -->
+    <string name="download_started">Download gestartet…</string>
+
     <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
-    <string name="download_unsupported">Downloads werden nicht unterstützt</string>
+    <string name="download_unsupported">Dieser Download wird nicht unterstützt</string>
     <string name="file_upload_unsupported">Datei-Upload wird nicht unterstützt</string>
     <string name="no_app_to_handle">Keine App kann diesen Link öffnen</string>
     <string name="page_crash_repeated">Diese Seite stürzt wiederholt ab — zurück zur Startseite</string>

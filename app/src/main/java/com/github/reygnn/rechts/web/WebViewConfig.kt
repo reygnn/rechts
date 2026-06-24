@@ -104,6 +104,26 @@ object WebViewConfig {
     }
 
     /**
+     * The stored cookies for [url] on whichever profile matches [privateMode] —
+     * the isolated [PRIVATE_PROFILE] jar in private mode, the default profile's
+     * otherwise. Used to carry the live session onto a [DownloadHandler]
+     * request so a download behind a login authenticates. Returns null when
+     * there are none.
+     *
+     * Mirrors [apply]'s profile selection so the cookie source always matches
+     * the WebView the download came from — a private download must read the
+     * private jar, never the persistent default one.
+     */
+    fun cookieFor(url: String, privateMode: Boolean): String? {
+        val cookieManager = if (privateMode && multiProfileSupported()) {
+            ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE).cookieManager
+        } else {
+            CookieManager.getInstance()
+        }
+        return cookieManager.getCookie(url)
+    }
+
+    /**
      * Deletes the isolated private-browsing profile and all its data. The
      * normal/default profile — and therefore saved logins — is untouched.
      *
