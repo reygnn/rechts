@@ -40,17 +40,13 @@ object WebViewConfig {
     @SuppressLint("SetJavaScriptEnabled")
     fun apply(webView: WebView, privateMode: Boolean) {
         // Bind the isolated profile FIRST — it must be set before the WebView
-        // navigates anywhere — and grab *that profile's own* CookieManager, so
-        // the cookie policy below applies to the private jar and not to the
-        // default profile's. (CookieManager.getInstance() is the default
-        // profile's manager.)
-        val cookieManager = if (privateMode && multiProfileSupported()) {
-            val profile = ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
-            WebViewCompat.setProfile(webView, PRIVATE_PROFILE)
-            profile.cookieManager
-        } else {
-            CookieManager.getInstance()
-        }
+        // navigates anywhere — then apply the cookie policy below to *that
+        // profile's own* CookieManager, never the default profile's. Both go
+        // through the shared helpers ([bindProfile], [cookieManagerFor]), which
+        // key off the single [usePrivateProfile] gate, so the bound profile and
+        // the configured cookie jar can never disagree.
+        bindProfile(webView, privateMode)
+        val cookieManager = cookieManagerFor(privateMode)
 
         webView.settings.apply {
             javaScriptEnabled = true
@@ -97,7 +93,7 @@ object WebViewConfig {
      * could spill data into the persistent default profile.
      */
     fun bindProfile(webView: WebView, privateMode: Boolean) {
-        if (privateMode && multiProfileSupported()) {
+        if (usePrivateProfile(privateMode)) {
             ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE)
             WebViewCompat.setProfile(webView, PRIVATE_PROFILE)
         }
@@ -114,14 +110,31 @@ object WebViewConfig {
      * the WebView the download came from — a private download must read the
      * private jar, never the persistent default one.
      */
-    fun cookieFor(url: String, privateMode: Boolean): String? {
-        val cookieManager = if (privateMode && multiProfileSupported()) {
+    fun cookieFor(url: String, privateMode: Boolean): String? =
+        cookieManagerFor(privateMode).getCookie(url)
+
+    /**
+     * Whether the isolated [PRIVATE_PROFILE] backs operations right now: private
+     * mode was asked for *and* this device's WebView actually supports multiple
+     * profiles. The single source of truth for that decision — [apply],
+     * [bindProfile] and [cookieFor] all defer to it (via [cookieManagerFor]),
+     * so a change to the rule (a new gate, a renamed profile) lands in one place
+     * and the WebView binding can never diverge from the cookie jar it reads.
+     */
+    private fun usePrivateProfile(privateMode: Boolean): Boolean =
+        privateMode && multiProfileSupported()
+
+    /**
+     * The [CookieManager] of whichever profile [usePrivateProfile] selects — the
+     * isolated private jar, or the default profile's. A private download must
+     * read the private jar, never the persistent default one.
+     */
+    private fun cookieManagerFor(privateMode: Boolean): CookieManager =
+        if (usePrivateProfile(privateMode)) {
             ProfileStore.getInstance().getOrCreateProfile(PRIVATE_PROFILE).cookieManager
         } else {
             CookieManager.getInstance()
         }
-        return cookieManager.getCookie(url)
-    }
 
     /**
      * Deletes the isolated private-browsing profile and all its data. The

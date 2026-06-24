@@ -51,7 +51,7 @@ object DownloadHandler {
      * [ExternalScheme.isInternal].
      */
     fun isEnqueueable(url: String): Boolean {
-        val scheme = url.substringBefore(':', missingDelimiterValue = "").lowercase()
+        val scheme = schemeOf(url)
         return scheme == "http" || scheme == "https"
     }
 

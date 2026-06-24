@@ -7,6 +7,14 @@ import android.net.Uri
 import android.util.Log
 
 /**
+ * The lowercase scheme of [url] — the part before the first `:`, or `""` when
+ * there is none. The one scheme-extraction rule shared by [ExternalScheme] and
+ * [DownloadHandler] so their classifications can never drift apart.
+ */
+internal fun schemeOf(url: String): String =
+    url.substringBefore(':', missingDelimiterValue = "").lowercase()
+
+/**
  * Hands URLs the WebView can't render itself (`mailto:`, `tel:`, `sms:`,
  * `geo:`, `intent:`, app deep links, …) off to whichever app the system
  * resolves them to.
@@ -25,10 +33,7 @@ object ExternalScheme {
     private val INTERNAL_SCHEMES = setOf("http", "https", "about")
 
     /** Whether [url] is something the WebView itself should load. */
-    fun isInternal(url: String): Boolean {
-        val scheme = url.substringBefore(':', missingDelimiterValue = "").lowercase()
-        return scheme in INTERNAL_SCHEMES
-    }
+    fun isInternal(url: String): Boolean = schemeOf(url) in INTERNAL_SCHEMES
 
     /** What to do with a navigation a loaded page initiated. */
     enum class WebNavigation {
