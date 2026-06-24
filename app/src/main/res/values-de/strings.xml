@@ -32,6 +32,8 @@
 
     <!-- Download handed to the system DownloadManager -->
     <string name="download_started">Download gestartet…</string>
+    <!-- A valid http(s) download the platform refused (not a scheme problem) -->
+    <string name="download_failed">Download fehlgeschlagen</string>
 
     <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
     <string name="download_unsupported">Dieser Download wird nicht unterstützt</string>

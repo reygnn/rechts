@@ -759,16 +759,20 @@ private fun createBrowserWebView(
     // can't render) is handed to the system DownloadManager, which fetches it to
     // the public Downloads folder with its own progress/"done" notification. The
     // page's cookies + user-agent ride along so a logged-in download works
-    // (private mode reads the isolated profile's jar). http(s) only — a
-    // blob:/data: download has no fetchable URL, so fall back to the
-    // "unsupported" notice rather than failing silently.
+    // (private mode reads the isolated profile's jar). The outcome picks the
+    // notice: a blob:/data: download has no fetchable URL (unsupported), a valid
+    // http(s) download the platform refused gets a distinct "failed" notice, and
+    // neither fails silently.
     setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
         val cookie = WebViewConfig.cookieFor(url, privateMode)
-        if (DownloadHandler.enqueue(context, url, userAgent, contentDisposition, mimeType, cookie)) {
-            showNotice(context, R.string.download_started)
-        } else {
-            showNotice(context, R.string.download_unsupported)
+        val noticeRes = when (
+            DownloadHandler.enqueue(context, url, userAgent, contentDisposition, mimeType, cookie)
+        ) {
+            DownloadHandler.Outcome.STARTED -> R.string.download_started
+            DownloadHandler.Outcome.UNSUPPORTED -> R.string.download_unsupported
+            DownloadHandler.Outcome.FAILED -> R.string.download_failed
         }
+        showNotice(context, noticeRes)
     }
 
     // Bind the profile (private vs default) BEFORE the WebView loads anything.
