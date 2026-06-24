@@ -58,3 +58,37 @@ Ranked most-severe first.
   cap is applied in both `encode` (:67) and `decode` (:79), but the KDoc says it
   is "Enforced on `encode`." Harmless, but the doc and the second `takeLast`
   disagree on where the cap is authoritative.
+
+---
+
+Open issue from the code review of the downloads feature (`v0.6.0`, the
+`a719362..8595818` range). The other findings (#2 misleading "unsupported"
+notice, #3 duplicated scheme parsing, #4 triplicated profile selection) were
+fixed in 0.6.1.
+
+## Bugs
+
+- [ ] **A download whose filename already exists in `Downloads/` fails
+  silently after an optimistic "Download started…".**
+  `web/DownloadHandler.kt` (`enqueue` → `setDestinationInExternalPublicDir`).
+  We force an explicit destination path (`Downloads/<guessFileName>`); when that
+  file already exists the platform `DownloadManager` does **not** auto-number
+  (`file-1.zip`) for an explicit destination — it fails the download with
+  `ERROR_FILE_ALREADY_EXISTS`. The failure is **asynchronous**: `enqueue()` is
+  accepted and returns a valid id, so we report `Outcome.STARTED` and toast
+  "Download started…"; the error only surfaces later on the manager's background
+  thread, where our `try/catch` can't see it. Result: the user is told it
+  started but no file lands (only the system's own failure notification shows).
+  Repro: download `bild.jpg`, then re-download anything that `guessFileName`
+  resolves to `bild.jpg` again.
+
+  **Deliberately deferred** (decided during the 0.6.1 review): under scoped
+  storage (`minSdk 36`) there is no *reliable* pre-check — files DownloadManager
+  writes to public `Downloads/` are owned by the download provider, so a
+  `File.exists()` / MediaStore query only sees rechts' *own* prior downloads,
+  not the real directory contents. The genuinely correct fix is to observe the
+  real outcome via a `DownloadManager` completion broadcast
+  (`ACTION_DOWNLOAD_COMPLETE`) and show a real "failed" notice — but that is a
+  small feature (receiver in `MainActivity`, manifest entry, lifecycle) and was
+  judged out of scope for the minimal no-download-UI design. The system still
+  posts its own failure notification, so it is not fully invisible.
