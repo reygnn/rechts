@@ -75,7 +75,7 @@ com.github.reygnn.rechts/
   ui/
     MainActivity.kt              — ComponentActivity (singleTask), edge-to-edge, hosts BrowserScreen; wipes private profile on cold start; routes inbound VIEW intents (onCreate + onNewIntent)
     browser/
-      BrowserScreen.kt           — Compose chrome + AndroidView(SwipeRefreshLayout→WebView, pull-to-refresh); overflow menu (back/forward/reload row, favorite star + Favorites, private toggle, set-default); hosts the favorites overlay on top (WebView stays alive); wires WebViewClient/ChromeClient → VM
+      BrowserScreen.kt           — Compose chrome + AndroidView(SwipeRefreshLayout→WebView, pull-to-refresh); overflow menu (back/forward/reload row, favorite star + Favorites, private toggle, set-default); hosts the favorites overlay on top (WebView stays alive); wires WebViewClient/ChromeClient → VM; routes <input type=file> uploads to the system picker via an ActivityResultLauncher
       BrowserViewModel.kt        — StateFlow<BrowserUiState> + buffered Channel<String> loadRequests (also openExternalUrl for inbound links + favorites); onPageTitle from onReceivedTitle
       BrowserUiState.kt          — chrome state (address, page title, progress, history flags)
     favorites/
@@ -205,6 +205,20 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    one. Accepted privacy trade-off: a private-mode download still lands in public
    storage and rides the system DownloadManager — inherent to "download", same as
    every browser. Don't build a custom download manager, list, or history.
+10. **File upload uses the system picker, nothing custom.** An `<input
+    type="file">` triggers `WebChromeClient.onShowFileChooser`, which hands the
+    platform-built chooser intent (`FileChooserParams.createIntent()` — it
+    already carries the input's accept types + multiple flag) to the system
+    picker via an `ActivityResultLauncher` in `BrowserScreen`; the result is
+    decoded with `FileChooserParams.parseResult` and delivered to the one-shot
+    `filePathCallback` (the picked `content://` URIs, or null on cancel / no
+    picker app). The callback is parked in `pendingFileChooser` until the picker
+    returns and must be answered exactly once — a second chooser cancels the
+    stale one first. Privacy is preserved by construction: the picker yields
+    `content://` URIs read through a temporary grant, so `WebViewConfig`'s
+    `allowFileAccess` (`file://` access) stays **off** — don't enable it to
+    "support uploads". Don't build a custom file browser or add camera-capture
+    plumbing; the system picker is the whole feature.
 
 ---
 

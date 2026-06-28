@@ -2,6 +2,7 @@ package com.github.reygnn.rechts.ui.browser
 
 import android.app.Activity
 import android.app.role.RoleManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -247,11 +248,53 @@ fun BrowserScreen(
     // first-load effect). Never written to disk; private is never captured.
     val normalHistory = remember { NormalHistoryHolder() }
 
+    // File upload (<input type="file">) plumbing. onShowFileChooser hands us a
+    // one-shot callback that must be answered exactly once — with the picked
+    // URIs or null on cancel — so we park it here until the system picker
+    // returns. The picker runs as a separate activity; results come back through
+    // the launcher below. Privacy stays intact: the picker yields content:// URIs
+    // the WebView reads via a temporary grant, so WebViewConfig's allowFileAccess
+    // (file:// access) can remain off.
+    val pendingFileChooser = remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    fun deliverFileChooser(uris: Array<Uri>?) {
+        val callback = pendingFileChooser.value
+        pendingFileChooser.value = null
+        // The callback belongs to the render process; if its WebView was torn
+        // down meanwhile (mode switch / crash) delivering may throw — swallow it.
+        runCatching { callback?.onReceiveValue(uris) }
+            .onFailure { Log.w(TAG, "File-chooser callback delivery failed", it) }
+    }
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        // parseResult turns the picker's result into the URI array the WebView
+        // expects, handling single pick, multi-pick (clipData) and cancel (null).
+        deliverFileChooser(
+            WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data),
+        )
+    }
+    // Launch the platform-built chooser intent for an <input type="file"> request.
+    // The intent already honours the input's accept types and multiple flag.
+    val launchFilePicker: (ValueCallback<Array<Uri>>, Intent) -> Unit = { callback, intent ->
+        // A fresh chooser before the previous one returned: answer the stale
+        // callback (null) so its page isn't left waiting, then take over.
+        if (pendingFileChooser.value != null) deliverFileChooser(null)
+        pendingFileChooser.value = callback
+        try {
+            fileChooserLauncher.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            // No app can serve the picker — answer the page and tell the user.
+            Log.w(TAG, "No activity available to pick a file", e)
+            deliverFileChooser(null)
+            Toast.makeText(context, R.string.file_upload_unsupported, Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // One WebView per mode (and per renderer-crash epoch): switching modes
     // recreates it bound to the other profile (normal = persistent default,
     // private = isolated, session-only).
     val webView = remember(isPrivate, webViewEpoch) {
-        createBrowserWebView(context, viewModel, isPrivate, captureWebViews) {
+        createBrowserWebView(context, viewModel, isPrivate, captureWebViews, launchFilePicker) {
             // Reopen the page only while we're not in a crash loop; once the
             // gate trips, drop the crashing URL and let the first-load effect
             // fall back to the homepage with a notice.
@@ -596,10 +639,13 @@ private fun createBrowserWebView(
     viewModel: BrowserViewModel,
     privateMode: Boolean,
     captureWebViews: MutableSet<WebView>,
+    launchFilePicker: (ValueCallback<Array<Uri>>, Intent) -> Unit,
     onRenderGone: () -> Unit,
 ): WebView {
-    // Cheap throttle shared by the download + file-upload notices so a hostile
-    // page that auto-fires either in a loop can't flood the screen with toasts.
+    // Cheap throttle on the download "unsupported" notice so a hostile page that
+    // auto-fires a non-fetchable download in a loop can't flood the screen with
+    // toasts. (The file-upload notice fires only on the rare no-picker-app case,
+    // which a page can't spam, so it doesn't need gating.)
     val noticeGate = MinIntervalGate(NOTICE_TOAST_MIN_INTERVAL_MS)
     fun showNotice(ctx: Context, messageRes: Int) {
         if (!noticeGate.accept(SystemClock.uptimeMillis())) return
@@ -742,15 +788,17 @@ private fun createBrowserWebView(
             request.deny()
         }
 
-        // File upload is out of scope (CLAUDE.md). The default would silently
-        // do nothing; cancel the request cleanly and tell the user instead.
+        // An <input type="file"> was activated. Hand the platform-built chooser
+        // intent (it already carries the input's accept types + multiple flag) to
+        // the composable, which launches it and answers filePathCallback with the
+        // picked URIs (or null on cancel) once the picker returns. Returning true
+        // takes ownership of the one-shot callback.
         override fun onShowFileChooser(
             webView: WebView,
             filePathCallback: ValueCallback<Array<Uri>>,
             fileChooserParams: FileChooserParams,
         ): Boolean {
-            filePathCallback.onReceiveValue(null)
-            showNotice(context, R.string.file_upload_unsupported)
+            launchFilePicker(filePathCallback, fileChooserParams.createIntent())
             return true
         }
     }
