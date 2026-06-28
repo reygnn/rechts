@@ -121,7 +121,7 @@ import kotlinx.coroutines.launch
 
 private const val TAG = "BrowserScreen"
 
-/** Minimum spacing between repeated chrome notices (download started/unsupported, file upload). */
+/** Minimum spacing between repeated download notices (started/unsupported/failed). */
 private const val NOTICE_TOAST_MIN_INTERVAL_MS = 3_000L
 
 /**
@@ -255,6 +255,14 @@ fun BrowserScreen(
     // the launcher below. Privacy stays intact: the picker yields content:// URIs
     // the WebView reads via a temporary grant, so WebViewConfig's allowFileAccess
     // (file:// access) can remain off.
+    //
+    // Plain remember, not rememberSaveable: a ValueCallback can't be serialized,
+    // and the render process owning it dies with the process anyway. The trade-off
+    // is that if the OS kills us while the picker is foreground, the parked
+    // callback is gone on restore and the launcher's redelivered result lands on a
+    // null pendingFileChooser → silently dropped (the form's input stays empty, as
+    // if cancelled). Rare, no error, user just re-taps; not worth persisting an
+    // unsaveable callback for.
     val pendingFileChooser = remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     fun deliverFileChooser(uris: Array<Uri>?) {
         val callback = pendingFileChooser.value
