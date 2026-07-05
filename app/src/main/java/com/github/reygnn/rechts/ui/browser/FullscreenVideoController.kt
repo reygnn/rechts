@@ -51,6 +51,7 @@ class FullscreenVideoController(
     private var previousLightStatusBars = false
     private var previousLightNavigationBars = false
     private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var previousContentVisibility = View.VISIBLE
 
     /**
      * Displays [view] fullscreen and remembers [cb] so [hide] can tell the page
@@ -77,8 +78,11 @@ class FullscreenVideoController(
         // pairs exactly with the custom view's real lifecycle: a rotation that
         // re-issues onHide/onShow toggles it in lockstep, and a genuine exit shows
         // the page again. INVISIBLE (not GONE) keeps the WebView attached/laid out
-        // so playback and page state are untouched.
-        contentView().visibility = View.INVISIBLE
+        // so playback and page state are untouched. Capture-and-restore the prior
+        // visibility (like the bars/orientation below) rather than assuming VISIBLE.
+        val content = contentView()
+        previousContentVisibility = content.visibility
+        content.visibility = View.INVISIBLE
         // Paint the fullscreen container black as well, so its own letterbox area
         // (a clip that doesn't fill the screen) is black rather than the theme's
         // window background now showing behind the hidden content.
@@ -144,7 +148,7 @@ class FullscreenVideoController(
         customView = null
         callback = null
         decorView().removeView(view)
-        contentView().visibility = View.VISIBLE
+        contentView().visibility = previousContentVisibility
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         activity.requestedOrientation = previousOrientation
         insetsController().apply {
