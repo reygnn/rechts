@@ -32,7 +32,11 @@ It does:
   star) and reopen/reorder/delete favorites on a dedicated drag-and-drop
   favorites screen (overflow-menu "Favorites"),
 - hand file downloads off to the system `DownloadManager` (no in-app download
-  UI — the OS fetches to `Downloads/` with its own notification).
+  UI — the OS fetches to `Downloads/` with its own notification),
+- route `<input type="file">` uploads to the system file picker (no custom
+  file browser),
+- play HTML5 `<video>` fullscreen — rotating to landscape to fill the screen
+  like Chrome, with back or the page's own control exiting.
 
 It deliberately does **not** have (each is a new feature category that needs
 explicit user agreement before being built):

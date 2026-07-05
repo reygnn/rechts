@@ -16,15 +16,30 @@ companion is *rechts* — "right".
 - A slim load-progress bar.
 - Opens `http`/`https` links from other apps — can be set as your default
   browser (there's an in-app "set as default" entry in the ⋮ menu).
+- Save the current page to a small favorites list, then reopen, reorder
+  (drag-and-drop) or delete entries on a dedicated favorites screen (⋮ menu).
+- Hands file downloads to Android's system download manager — it fetches to
+  your public `Downloads/` folder with its own notification; there's no in-app
+  download list.
+- Picks a file for a web upload form (`<input type="file">`) through the
+  system file picker.
+- Plays HTML5 `<video>` fullscreen, rotating to landscape to fill the screen
+  (like Chrome); back or the page's own control exits.
 - Optional private mode (⋮ menu).
 
-That's the whole feature set, on purpose. No tabs, no bookmarks, no history.
+That's the whole feature set, on purpose. No tabs, no history, no settings
+screen — the favorites list is the one deliberate, minimal exception to
+"no saved browsing state".
 
 ## Privacy
 
 JavaScript is on (the modern web needs it), **third-party cookies are blocked**,
 web content can't reach the device's file system, app data is excluded from
 cloud backup, and search defaults to DuckDuckGo.
+
+One deliberate exception: a file download — even in private mode — is handed to
+Android's system download manager and saved to the public `Downloads/` folder,
+the same as any browser.
 
 **Optional private mode.** Tap the lock icon to toggle it. Normal browsing uses a
 persistent profile, so logins and cookies are remembered across launches.
