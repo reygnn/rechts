@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.github.reygnn.rechts.domain.UrlNormalizer
 import com.github.reygnn.rechts.ui.browser.BrowserScreen
 import com.github.reygnn.rechts.ui.browser.BrowserViewModel
 import com.github.reygnn.rechts.ui.theme.RechtsTheme
@@ -29,19 +30,32 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             RechtsTheme {
-                BrowserScreen(viewModel = viewModel, initialUrl = viewIntentUrl(intent))
+                BrowserScreen(viewModel = viewModel, initialUrl = inboundUrl(intent))
             }
         }
     }
 
-    /** A web link tapped while rechts is already running (singleTask reuse). */
+    /** A web link or shared text delivered while rechts is already running. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        viewIntentUrl(intent)?.let { viewModel.openExternalUrl(it) }
+        inboundUrl(intent)?.let { viewModel.openExternalUrl(it) }
     }
 
-    /** The URL of an inbound ACTION_VIEW intent, or null for a normal launch. */
-    private fun viewIntentUrl(intent: Intent?): String? =
-        intent?.takeIf { it.action == Intent.ACTION_VIEW }?.dataString
+    /**
+     * The URL an inbound intent should open, or null for a normal launch:
+     *  - `ACTION_VIEW`: the tapped link verbatim (hard rule 7 — inbound links
+     *    load as-is, and the web layer's scheme gate still vets non-http(s)).
+     *  - `ACTION_SEND` (`text/plain`): the shared text run through
+     *    [UrlNormalizer], so a shared link opens and shared words become a
+     *    search — exactly like typed address-bar input. The URL still passes the
+     *    scheme gate in [BrowserViewModel]'s load path before it reaches the WebView.
+     */
+    private fun inboundUrl(intent: Intent?): String? = when (intent?.action) {
+        Intent.ACTION_VIEW -> intent.dataString
+        Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+            ?.toString()
+            ?.let { UrlNormalizer.toUrlOrSearch(it) }
+        else -> null
+    }
 }

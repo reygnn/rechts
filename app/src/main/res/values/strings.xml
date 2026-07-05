@@ -16,6 +16,8 @@
     <string name="menu_add_favorite">Add to favorites</string>
     <string name="menu_remove_favorite">Remove from favorites</string>
     <string name="menu_favorites">Favorites</string>
+    <string name="menu_share">Share page</string>
+    <string name="menu_copy_link">Copy link</string>
     <string name="menu_private_mode">Private mode</string>
     <string name="menu_set_default">Set as default browser</string>
     <string name="already_default">rechts is already your default browser</string>

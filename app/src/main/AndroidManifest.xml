@@ -40,6 +40,14 @@
                 <data android:scheme="http" />
                 <data android:scheme="https" />
             </intent-filter>
+            <!-- Share target: receive a shared link or text ("Share → rechts").
+                 The text is normalized like typed input (a URL opens, plain
+                 words become a search) — see MainActivity.inboundUrl. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
     </application>

@@ -92,3 +92,35 @@ fixed in 0.6.1.
   small feature (receiver in `MainActivity`, manifest entry, lifecycle) and was
   judged out of scope for the minimal no-download-UI design. The system still
   posts its own failure notification, so it is not fully invisible.
+
+## Feature backlog (fundamental gaps, deferred)
+
+Surfaced 2026-07-05 alongside the share-in/out feature (which *was* built:
+overflow "Share page" / "Copy link" + an `ACTION_SEND` share target). These are
+genuine browser primitives, not the deliberately-excluded categories (tabs /
+history / find-in-page / settings screen). Kept here so they aren't lost.
+
+- [ ] **Long-press context menu on links & images.** Long-pressing a link or
+  image currently does nothing useful (no `WebView.HitTestResult` / `onLongClick`
+  wiring). Expected: copy link, share link, save image — the existing
+  `web/DownloadHandler` already enqueues, so only the hit-test wiring is missing.
+  Would live in `BrowserScreen` (`setOnLongClickListener` → `webView.hitTestResult`),
+  reusing the share/copy actions now in the overflow menu. Fits "one WebView +
+  address bar" as a basic interaction.
+
+- [ ] **Clear normal-mode browsing data.** The persistent (normal) profile
+  accumulates cookies/storage forever with no way to clear it — only private
+  mode is wiped. A single overflow action "Clear browsing data" (cookies +
+  WebStorage + cache for the default profile) would close the privacy gap
+  without a settings screen. Borderline against the "no settings screen" scope
+  line — decide before building.
+
+- [ ] **Request desktop site.** A user-agent + wide-viewport toggle for the
+  current page. Common, but not strictly fundamental for a minimal browser —
+  lowest priority here.
+
+- [ ] **Force-enable zoom (accessibility).** Pinch-zoom already works
+  (`builtInZoomControls`), but sites with `user-scalable=no` block it. Overriding
+  that (like Chrome's "force enable zoom") has no public `WebSettings` flag — it
+  needs injecting JS to rewrite the viewport meta, so it's more than a one-liner.
+  Accessibility win for low-vision users.

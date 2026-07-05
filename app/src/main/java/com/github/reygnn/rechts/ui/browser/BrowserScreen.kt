@@ -3,6 +3,8 @@ package com.github.reygnn.rechts.ui.browser
 import android.app.Activity
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -54,6 +56,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -556,6 +559,26 @@ fun BrowserScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Share the current page URL out to another app, or copy it to the clipboard.
+    // Both no-op on a blank URL (the menu entries are disabled then), so a launch
+    // screen with no page can't share an empty string.
+    val clipboard = remember(context) { context.getSystemService(ClipboardManager::class.java) }
+    val onSharePage: () -> Unit = {
+        val url = state.currentUrl
+        if (url.isNotBlank()) {
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, url)
+            }
+            context.startActivity(Intent.createChooser(send, null))
+        }
+    }
+    val onCopyLink: () -> Unit = {
+        val url = state.currentUrl
+        // Android 13+ shows its own "copied" confirmation, so no toast here.
+        if (url.isNotBlank()) clipboard?.setPrimaryClip(ClipData.newPlainText(url, url))
+    }
+
     // Pull-to-refresh host wrapping the WebView. One per WebView (mode switch /
     // crash rebuild make a new one), so it always wraps the live instance. The
     // gesture only fires at the top of the page — SwipeRefreshLayout consults the
@@ -611,6 +634,8 @@ fun BrowserScreen(
                         }
                     },
                     onOpenFavorites = { showFavorites = true },
+                    onSharePage = onSharePage,
+                    onCopyLink = onCopyLink,
                     onBack = { webView.goBack() },
                     onForward = { webView.goForward() },
                     onReloadOrStop = {
@@ -930,6 +955,8 @@ private fun BrowserChrome(
     canFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onOpenFavorites: () -> Unit,
+    onSharePage: () -> Unit,
+    onCopyLink: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -1008,6 +1035,8 @@ private fun BrowserChrome(
                     canFavorite = canFavorite,
                     onToggleFavorite = onToggleFavorite,
                     onOpenFavorites = onOpenFavorites,
+                    onSharePage = onSharePage,
+                    onCopyLink = onCopyLink,
                     onBack = onBack,
                     onForward = onForward,
                     onReloadOrStop = onReloadOrStop,
@@ -1041,6 +1070,8 @@ private fun OverflowMenu(
     canFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onOpenFavorites: () -> Unit,
+    onSharePage: () -> Unit,
+    onCopyLink: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
@@ -1116,6 +1147,27 @@ private fun OverflowMenu(
                 },
                 leadingIcon = {
                     Icon(painterResource(R.drawable.ic_star), contentDescription = null)
+                },
+            )
+            // Share the current page URL out, or copy it. Both need a real URL.
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.menu_share)) },
+                onClick = {
+                    expanded = false
+                    onSharePage()
+                },
+                enabled = state.currentUrl.isNotBlank(),
+                leadingIcon = { Icon(Icons.Filled.Share, contentDescription = null) },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.menu_copy_link)) },
+                onClick = {
+                    expanded = false
+                    onCopyLink()
+                },
+                enabled = state.currentUrl.isNotBlank(),
+                leadingIcon = {
+                    Icon(painterResource(R.drawable.ic_content_copy), contentDescription = null)
                 },
             )
             HorizontalDivider()
