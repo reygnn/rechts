@@ -633,11 +633,6 @@ fun BrowserScreen(
                 key(webView) {
                     AndroidView(
                         factory = { swipeRefresh },
-                        // While a video is fullscreen the platform view covers the
-                        // page on decorView; drop the WebView container out of the
-                        // layout so it stops measuring/painting an occluded page
-                        // underneath. Reads isFullscreen so it flips back on exit.
-                        update = { it.visibility = if (isFullscreen) View.GONE else View.VISIBLE },
                         // Bottom (navigation-bar) and side insets belong here; the
                         // chrome already consumes the top + side insets itself. The
                         // sides matter in landscape (gesture nav / display cutout).

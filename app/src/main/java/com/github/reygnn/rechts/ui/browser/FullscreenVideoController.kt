@@ -1,6 +1,8 @@
 package com.github.reygnn.rechts.ui.browser
 
 import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.graphics.Color
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -14,11 +16,12 @@ import androidx.core.view.WindowInsetsControllerCompat
  * any element requesting the Fullscreen API).
  *
  * The platform hands `WebChromeClient.onShowCustomView` a ready-made view; our
- * only job is to display it edge-to-edge over the whole activity and hide the
- * system bars, then tear it all down again on exit. The custom view is added
- * straight to the window's [Activity.getWindow]`.decorView`, so it naturally
- * covers the Compose chrome (address bar) underneath — no Compose visibility
- * state to toggle.
+ * job is to display it edge-to-edge over the whole activity, hide the system
+ * bars, and rotate to landscape so the video fills the screen (like Chrome),
+ * then tear it all down and restore the prior orientation on exit. The custom
+ * view is added straight to the window's [Activity.getWindow]`.decorView`, so it
+ * naturally covers the Compose chrome (address bar) underneath — no Compose
+ * visibility state to toggle.
  *
  * Only one fullscreen view exists at a time: a second [show] dismisses the
  * previous one first (notifying its page) before taking over.
@@ -43,6 +46,7 @@ class FullscreenVideoController(
     private var previousBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
     private var previousLightStatusBars = false
     private var previousLightNavigationBars = false
+    private var previousOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     /**
      * Displays [view] fullscreen and remembers [cb] so [hide] can tell the page
@@ -50,9 +54,33 @@ class FullscreenVideoController(
      * dismissed first so its page isn't left believing it's still fullscreen.
      */
     fun show(view: View, cb: WebChromeClient.CustomViewCallback) {
+        val firstEntry = customView == null
         if (customView != null) hide()
+        // Capture the app's orientation once, before forcing landscape, so a
+        // degenerate second show() (customView already set) doesn't overwrite the
+        // real pre-fullscreen value with the landscape we just imposed.
+        if (firstEntry) previousOrientation = activity.requestedOrientation
         customView = view
         callback = cb
+        // Fill the screen like a video player: rotate to landscape so a landscape
+        // clip isn't letterboxed in portrait (matches Chrome). SENSOR_LANDSCAPE
+        // follows the sensor between the two landscape orientations. Restored to
+        // the app's default in hide(). The black background below still backstops
+        // a portrait clip (pillarboxed here) and the rotation transition.
+        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Hide the whole page content behind the fullscreen view so nothing bleeds
+        // through any transparent region of the platform view — a video SurfaceView
+        // punches its own surface, and letterbox / rounded corners can otherwise
+        // reveal the page. Driven here (not by the Compose isFullscreen flag) so it
+        // pairs exactly with the custom view's real lifecycle: a rotation that
+        // re-issues onHide/onShow toggles it in lockstep, and a genuine exit shows
+        // the page again. INVISIBLE (not GONE) keeps the WebView attached/laid out
+        // so playback and page state are untouched.
+        contentView().visibility = View.INVISIBLE
+        // Paint the fullscreen container black as well, so its own letterbox area
+        // (a clip that doesn't fill the screen) is black rather than the theme's
+        // window background now showing behind the hidden content.
+        view.setBackgroundColor(Color.BLACK)
         decorView().addView(
             view,
             ViewGroup.LayoutParams(
@@ -98,7 +126,9 @@ class FullscreenVideoController(
         customView = null
         callback = null
         decorView().removeView(view)
+        contentView().visibility = View.VISIBLE
         activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        activity.requestedOrientation = previousOrientation
         insetsController().apply {
             show(WindowInsetsCompat.Type.systemBars())
             systemBarsBehavior = previousBarsBehavior
@@ -110,6 +140,10 @@ class FullscreenVideoController(
     }
 
     private fun decorView(): ViewGroup = activity.window.decorView as ViewGroup
+
+    /** The activity's content host (Compose chrome + WebView), a sibling of the
+     *  custom view added straight to the decorView — hidden while fullscreen. */
+    private fun contentView(): View = activity.findViewById(android.R.id.content)
 
     private fun insetsController(): WindowInsetsControllerCompat =
         WindowCompat.getInsetsController(activity.window, activity.window.decorView)
