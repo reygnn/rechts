@@ -153,6 +153,18 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
 }
 
 /**
+ * True only when rechts currently holds the default-browser role. Used to hide
+ * the "set as default" menu entry when it would be a no-op. Returns false when
+ * the role is unavailable (unusual device) — the entry then stays visible and
+ * routes to system settings, rather than silently vanishing.
+ */
+private fun Context.isDefaultBrowser(): Boolean {
+    val roleManager = getSystemService(RoleManager::class.java) ?: return false
+    return roleManager.isRoleAvailable(RoleManager.ROLE_BROWSER) &&
+        roleManager.isRoleHeld(RoleManager.ROLE_BROWSER)
+}
+
+/**
  * Non-snapshot holder for the normal session's serialized history, kept IN
  * MEMORY across a mode switch only. Switching into private mode rebuilds (and
  * destroys) the normal WebView; this lets a later switch back to normal restore
@@ -531,6 +543,19 @@ fun BrowserScreen(
         }
     }
 
+    // Whether rechts is the default browser, so the "set as default" menu entry
+    // can hide once it's a no-op. Re-checked on every resume: the user can change
+    // the default from the role dialog or system settings and come back, and
+    // resume covers both return paths.
+    var isDefaultBrowser by remember { mutableStateOf(context.isDefaultBrowser()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) isDefaultBrowser = context.isDefaultBrowser()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Pull-to-refresh host wrapping the WebView. One per WebView (mode switch /
     // crash rebuild make a new one), so it always wraps the live instance. The
     // gesture only fires at the top of the page — SwipeRefreshLayout consults the
@@ -602,6 +627,7 @@ fun BrowserScreen(
                             webView.reload()
                         }
                     },
+                    showSetDefault = !isDefaultBrowser,
                     onTogglePrivate = {
                         val next = !isPrivate
                         // Leaving normal mode: snapshot its history (in memory) on the
@@ -907,6 +933,7 @@ private fun BrowserChrome(
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
+    showSetDefault: Boolean,
     onTogglePrivate: () -> Unit,
     onSetDefaultBrowser: () -> Unit,
     onAddressChange: (String) -> Unit,
@@ -984,6 +1011,7 @@ private fun BrowserChrome(
                     onBack = onBack,
                     onForward = onForward,
                     onReloadOrStop = onReloadOrStop,
+                    showSetDefault = showSetDefault,
                     onTogglePrivate = onTogglePrivate,
                     onSetDefaultBrowser = onSetDefaultBrowser,
                 )
@@ -1016,6 +1044,7 @@ private fun OverflowMenu(
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReloadOrStop: () -> Unit,
+    showSetDefault: Boolean,
     onTogglePrivate: () -> Unit,
     onSetDefaultBrowser: () -> Unit,
 ) {
@@ -1104,13 +1133,17 @@ private fun OverflowMenu(
                     if (isPrivate) Icon(Icons.Filled.Check, contentDescription = null)
                 },
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.menu_set_default)) },
-                onClick = {
-                    expanded = false
-                    onSetDefaultBrowser()
-                },
-            )
+            // Only offered while rechts isn't already the default — otherwise the
+            // action would be a no-op. Tracked reactively (re-checked on resume).
+            if (showSetDefault) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.menu_set_default)) },
+                    onClick = {
+                        expanded = false
+                        onSetDefaultBrowser()
+                    },
+                )
+            }
         }
     }
 }
