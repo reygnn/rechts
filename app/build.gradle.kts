@@ -20,6 +20,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Drop unused resources too (safe here: every resource is referenced
+            // statically via R.*, no getIdentifier lookups).
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
