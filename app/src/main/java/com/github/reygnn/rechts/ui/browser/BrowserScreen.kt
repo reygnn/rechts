@@ -14,6 +14,7 @@ import android.os.Parcel
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
@@ -298,11 +299,25 @@ fun BrowserScreen(
         }
     }
 
+    // HTML5 fullscreen video: the WebChromeClient hands the platform-built
+    // fullscreen view to this controller, which hosts it over the whole activity
+    // (decorView) and hides the system bars. Tied to the Activity's window;
+    // null only if there's somehow no Activity (then fullscreen is refused
+    // cleanly). isFullscreen mirrors the state so system back exits fullscreen
+    // instead of navigating page history (see BackHandler below).
+    val activity = remember(context) { context.findActivity() }
+    var isFullscreen by remember { mutableStateOf(false) }
+    val fullscreenController = remember(activity) {
+        activity?.let { FullscreenVideoController(it) { showing -> isFullscreen = showing } }
+    }
+
     // One WebView per mode (and per renderer-crash epoch): switching modes
     // recreates it bound to the other profile (normal = persistent default,
     // private = isolated, session-only).
     val webView = remember(isPrivate, webViewEpoch) {
-        createBrowserWebView(context, viewModel, isPrivate, captureWebViews, launchFilePicker) {
+        createBrowserWebView(
+            context, viewModel, isPrivate, captureWebViews, launchFilePicker, fullscreenController,
+        ) {
             // Reopen the page only while we're not in a crash loop; once the
             // gate trips, drop the crashing URL and let the first-load effect
             // fall back to the homepage with a notice.
@@ -453,6 +468,11 @@ fun BrowserScreen(
         if (addressFocused) focusManager.clearFocus() else webView.goBack()
     }
 
+    // While a video is fullscreen, back leaves fullscreen rather than navigating
+    // page history or exiting. Registered after the handler above so it wins
+    // (Compose consults back handlers in reverse registration order).
+    BackHandler(enabled = isFullscreen) { fullscreenController?.hide() }
+
     // Suspend the WebView with the app: AndroidView gives no lifecycle bridge,
     // so without this a backgrounded page keeps running JS timers and media.
     // pauseTimers() is what actually stops JS (onPause() alone does not); it is
@@ -476,6 +496,11 @@ fun BrowserScreen(
     // rather than relying on the AndroidView teardown order.
     DisposableEffect(webView) {
         onDispose {
+            // If this WebView is replaced (mode switch / crash rebuild) or the
+            // screen leaves while a video is fullscreen, drop the custom view and
+            // restore the system bars — otherwise they'd stay hidden with no way
+            // back. Safe no-op when nothing is fullscreen.
+            fullscreenController?.hide()
             // Destroy any popup-capture WebViews this main view spawned that
             // haven't self-destructed yet, so they don't outlive it (holding the
             // Activity context) until their timeout. Membership in the set is the
@@ -648,6 +673,7 @@ private fun createBrowserWebView(
     privateMode: Boolean,
     captureWebViews: MutableSet<WebView>,
     launchFilePicker: (ValueCallback<Array<Uri>>, Intent) -> Unit,
+    fullscreen: FullscreenVideoController?,
     onRenderGone: () -> Unit,
 ): WebView {
     // Cheap throttle on the download "unsupported" notice so a hostile page that
@@ -808,6 +834,26 @@ private fun createBrowserWebView(
         ): Boolean {
             launchFilePicker(filePathCallback, fileChooserParams.createIntent())
             return true
+        }
+
+        // A page element (typically a <video>) entered HTML5 fullscreen. The
+        // platform hands us a ready-made view to display over the whole app;
+        // FullscreenVideoController hosts it edge-to-edge and hides the system
+        // bars. Without an Activity to host it we can't go fullscreen, so answer
+        // the callback immediately — that drops the page back out of fullscreen
+        // instead of leaving its video stuck in a fullscreen state we ignored.
+        override fun onShowCustomView(view: View, callback: CustomViewCallback) {
+            if (fullscreen == null) {
+                callback.onCustomViewHidden()
+                return
+            }
+            fullscreen.show(view, callback)
+        }
+
+        // The page left fullscreen (its own control, or JS exiting the
+        // Fullscreen API). Tear the custom view down and restore the chrome.
+        override fun onHideCustomView() {
+            fullscreen?.hide()
         }
     }
 
