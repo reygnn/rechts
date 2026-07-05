@@ -633,6 +633,11 @@ fun BrowserScreen(
                 key(webView) {
                     AndroidView(
                         factory = { swipeRefresh },
+                        // While a video is fullscreen the platform view covers the
+                        // page on decorView; drop the WebView container out of the
+                        // layout so it stops measuring/painting an occluded page
+                        // underneath. Reads isFullscreen so it flips back on exit.
+                        update = { it.visibility = if (isFullscreen) View.GONE else View.VISIBLE },
                         // Bottom (navigation-bar) and side insets belong here; the
                         // chrome already consumes the top + side insets itself. The
                         // sides matter in landscape (gesture nav / display cutout).
@@ -721,6 +726,12 @@ private fun createBrowserWebView(
         }
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            // Safety net: a page that navigates itself while a <video> is
+            // fullscreen doesn't reliably fire onHideCustomView across every
+            // navigation type, which would otherwise strand the custom view over
+            // the new page with the chrome covered. hide() is a no-op when nothing
+            // is fullscreen, so this is cheap on the common path.
+            fullscreen?.hide()
             viewModel.onPageStarted(url, view.canGoBack(), view.canGoForward())
         }
 

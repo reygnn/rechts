@@ -37,8 +37,12 @@ class FullscreenVideoController(
     private var customView: View? = null
     private var callback: WebChromeClient.CustomViewCallback? = null
 
-    /** Whether a fullscreen view is currently displayed. */
-    val isShowing: Boolean get() = customView != null
+    // Window state we mutate on show and restore on hide, captured at show time
+    // so exit puts back exactly what was there before rather than a hard-coded
+    // default: the system-bars behavior and the bar-icon appearance.
+    private var previousBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+    private var previousLightStatusBars = false
+    private var previousLightNavigationBars = false
 
     /**
      * Displays [view] fullscreen and remembers [cb] so [hide] can tell the page
@@ -49,7 +53,7 @@ class FullscreenVideoController(
         if (customView != null) hide()
         customView = view
         callback = cb
-        (activity.window.decorView as ViewGroup).addView(
+        decorView().addView(
             view,
             ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -60,6 +64,14 @@ class FullscreenVideoController(
         // explicit "I'm watching this" signal, not idle time.
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         insetsController().apply {
+            previousBarsBehavior = systemBarsBehavior
+            previousLightStatusBars = isAppearanceLightStatusBars
+            previousLightNavigationBars = isAppearanceLightNavigationBars
+            // A fullscreen video surface is black; force light (white) bar icons
+            // so the transient bars stay legible over it, whatever the page chrome
+            // asked for. Restored in hide().
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
             systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             hide(WindowInsetsCompat.Type.systemBars())
@@ -70,22 +82,34 @@ class FullscreenVideoController(
     /**
      * Removes the fullscreen view and restores the normal chrome/system bars.
      * Idempotent — a no-op when nothing is showing, so it's safe to call from
-     * both the page's `onHideCustomView`, the back handler, and teardown.
+     * the page's `onHideCustomView`, the back handler, and teardown.
      *
      * Notifies the page via [WebChromeClient.CustomViewCallback.onCustomViewHidden]
      * so a host-initiated exit (back / teardown) also takes the page's video out
-     * of its fullscreen state.
+     * of its fullscreen state. That callback belongs to the render process and can
+     * throw once its WebView is torn down (a renderer crash while fullscreen drives
+     * this hide() from teardown), so it runs last, guarded — our own state and the
+     * window are already restored by then, otherwise a throw would leave the back
+     * handler armed over a no-op hide() with the system bars still hidden.
      */
     fun hide() {
         val view = customView ?: return
-        (activity.window.decorView as ViewGroup).removeView(view)
+        val cb = callback
         customView = null
-        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        insetsController().show(WindowInsetsCompat.Type.systemBars())
-        callback?.onCustomViewHidden()
         callback = null
+        decorView().removeView(view)
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        insetsController().apply {
+            show(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = previousBarsBehavior
+            isAppearanceLightStatusBars = previousLightStatusBars
+            isAppearanceLightNavigationBars = previousLightNavigationBars
+        }
         onShowingChanged(false)
+        runCatching { cb?.onCustomViewHidden() }
     }
+
+    private fun decorView(): ViewGroup = activity.window.decorView as ViewGroup
 
     private fun insetsController(): WindowInsetsControllerCompat =
         WindowCompat.getInsetsController(activity.window, activity.window.decorView)
