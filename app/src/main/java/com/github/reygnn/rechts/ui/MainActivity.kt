@@ -47,15 +47,16 @@ class MainActivity : ComponentActivity() {
      *  - `ACTION_VIEW`: the tapped link verbatim (hard rule 7 — inbound links
      *    load as-is, and the web layer's scheme gate still vets non-http(s)).
      *  - `ACTION_SEND` (`text/plain`): the shared text run through
-     *    [UrlNormalizer], so a shared link opens and shared words become a
-     *    search — exactly like typed address-bar input. The URL still passes the
-     *    scheme gate in [BrowserViewModel]'s load path before it reaches the WebView.
+     *    [UrlNormalizer.fromSharedText], which extracts the first embedded link
+     *    from a caption ("… https://…") and opens it, or searches when there's no
+     *    URL — like typed address-bar input. The result still passes the scheme
+     *    gate in [BrowserViewModel]'s load path before it reaches the WebView.
      */
     private fun inboundUrl(intent: Intent?): String? = when (intent?.action) {
         Intent.ACTION_VIEW -> intent.dataString
         Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
             ?.toString()
-            ?.let { UrlNormalizer.toUrlOrSearch(it) }
+            ?.let { UrlNormalizer.fromSharedText(it) }
         else -> null
     }
 }

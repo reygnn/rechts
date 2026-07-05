@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
@@ -13,6 +14,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Message
 import android.os.Parcel
+import android.os.PersistableBundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
@@ -569,14 +571,29 @@ fun BrowserScreen(
             val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_TEXT, url)
+                // Give share targets (email, messaging) a readable subject. Read
+                // the title off the live WebView — the freshest value.
+                webView.title?.takeIf { it.isNotBlank() }
+                    ?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
             }
             context.startActivity(Intent.createChooser(send, null))
         }
     }
     val onCopyLink: () -> Unit = {
         val url = state.currentUrl
-        // Android 13+ shows its own "copied" confirmation, so no toast here.
-        if (url.isNotBlank()) clipboard?.setPrimaryClip(ClipData.newPlainText(url, url))
+        if (url.isNotBlank()) {
+            // The clip label shows in the system clipboard UI even when the
+            // content is hidden, so keep the URL out of it. In private mode also
+            // flag the clip sensitive so the URL stays out of the clipboard
+            // preview/history. Android 13+ shows its own "copied" toast.
+            val clip = ClipData.newPlainText(context.getString(R.string.copied_link_label), url)
+            if (isPrivate) {
+                clip.description.extras = PersistableBundle().apply {
+                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                }
+            }
+            clipboard?.setPrimaryClip(clip)
+        }
     }
 
     // Pull-to-refresh host wrapping the WebView. One per WebView (mode switch /

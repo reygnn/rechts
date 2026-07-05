@@ -19,6 +19,9 @@
     <string name="menu_share">Share page</string>
     <string name="menu_copy_link">Copy link</string>
     <string name="menu_private_mode">Private mode</string>
+    <!-- Clipboard entry label for a copied page URL (shown in the system
+         clipboard UI; kept generic so it never reveals a private-mode URL). -->
+    <string name="copied_link_label">Link</string>
     <string name="menu_set_default">Set as default browser</string>
     <string name="already_default">rechts is already your default browser</string>
 

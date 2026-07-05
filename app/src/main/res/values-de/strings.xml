@@ -19,6 +19,7 @@
     <string name="menu_share">Seite teilen</string>
     <string name="menu_copy_link">Link kopieren</string>
     <string name="menu_private_mode">Privater Modus</string>
+    <string name="copied_link_label">Link</string>
     <string name="menu_set_default">Als Standardbrowser festlegen</string>
     <string name="already_default">rechts ist bereits dein Standardbrowser</string>
 

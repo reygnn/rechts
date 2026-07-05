@@ -184,4 +184,59 @@ class UrlNormalizerTest {
         assertEquals("https://[fe80::1]:8080", UrlNormalizer.toUrlOrSearch("[fe80::1]:8080"))
         assertEquals("https://[::1]/path", UrlNormalizer.toUrlOrSearch("[::1]/path"))
     }
+
+    // --- fromSharedText: ACTION_SEND payloads (link possibly wrapped in prose) ---
+
+    @Test
+    fun `shared bare url opens as-is`() {
+        assertEquals("https://example.com/x", UrlNormalizer.fromSharedText("https://example.com/x"))
+        assertEquals("http://a.com", UrlNormalizer.fromSharedText("http://a.com"))
+    }
+
+    @Test
+    fun `shared url wrapped in a caption still opens the url`() {
+        assertEquals(
+            "https://youtu.be/abc",
+            UrlNormalizer.fromSharedText("Watch \"Title\" on YouTube https://youtu.be/abc"),
+        )
+        assertEquals("https://a.com/p", UrlNormalizer.fromSharedText("Title\nhttps://a.com/p"))
+    }
+
+    @Test
+    fun `trailing sentence punctuation is stripped from the shared url`() {
+        assertEquals("https://a.com/p", UrlNormalizer.fromSharedText("See https://a.com/p."))
+        assertEquals("https://a.com", UrlNormalizer.fromSharedText("(https://a.com)"))
+        assertEquals("https://a.com", UrlNormalizer.fromSharedText("link: https://a.com!"))
+    }
+
+    @Test
+    fun `balanced parens inside the shared url are kept`() {
+        assertEquals(
+            "https://en.wikipedia.org/wiki/Foo_(bar)",
+            UrlNormalizer.fromSharedText("https://en.wikipedia.org/wiki/Foo_(bar)"),
+        )
+        assertEquals(
+            "https://en.wikipedia.org/wiki/Foo_(bar)",
+            UrlNormalizer.fromSharedText("See https://en.wikipedia.org/wiki/Foo_(bar)."),
+        )
+    }
+
+    @Test
+    fun `the first url wins when several are shared`() {
+        assertEquals("https://a.com", UrlNormalizer.fromSharedText("https://a.com and https://b.com"))
+    }
+
+    @Test
+    fun `shared text without a url falls back to search or host`() {
+        assertTrue(
+            UrlNormalizer.fromSharedText("hello world")!!.startsWith("https://duckduckgo.com/?q="),
+        )
+        assertEquals("https://example.com", UrlNormalizer.fromSharedText("example.com"))
+    }
+
+    @Test
+    fun `blank shared text returns null`() {
+        assertNull(UrlNormalizer.fromSharedText(""))
+        assertNull(UrlNormalizer.fromSharedText("   "))
+    }
 }

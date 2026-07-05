@@ -45,6 +45,9 @@ object UrlNormalizer {
      */
     private val OPAQUE_SCHEME = Regex("^(about|mailto|tel|intent):.*", RegexOption.IGNORE_CASE)
 
+    /** First `http(s)` URL embedded anywhere in free text (a shared caption). */
+    private val EMBEDDED_URL = Regex("""https?://\S+""", RegexOption.IGNORE_CASE)
+
     /**
      * @return the URL to load, or `null` if [rawInput] is blank (nothing to do).
      */
@@ -62,6 +65,43 @@ object UrlNormalizer {
             return "https://$input"
         }
         return SEARCH_PREFIX + URLEncoder.encode(input, "UTF-8")
+    }
+
+    /**
+     * Turns shared text (an `ACTION_SEND` `EXTRA_TEXT` payload) into a URL or
+     * search. Many apps share more than a bare link — a title or caption plus the
+     * URL ("Watch X on YouTube https://youtu.be/abc") — so the first embedded
+     * `http(s)` URL is extracted and opened; only when there's none does the whole
+     * text fall through to [toUrlOrSearch] (bare host → site, words → search).
+     *
+     * @return the URL to load, or `null` if [raw] is blank.
+     */
+    fun fromSharedText(raw: String): String? {
+        val embedded = EMBEDDED_URL.find(raw)?.value?.let(::stripUrlBoundary)
+        return toUrlOrSearch(embedded ?: raw)
+    }
+
+    /**
+     * Strips trailing text-boundary characters an embedded URL picked up from the
+     * surrounding prose: sentence punctuation (`.`, `,`, `!`, …) and a closing
+     * bracket that has no matching opener inside the URL — so `"(https://a.com)."`
+     * yields `https://a.com` while a balanced `…/Foo_(bar)` keeps its `)`.
+     */
+    private fun stripUrlBoundary(url: String): String {
+        var s = url
+        while (s.isNotEmpty()) {
+            val c = s.last()
+            val strip = when (c) {
+                in ".,;:!?\"'>" -> true
+                ')' -> s.count { it == ')' } > s.count { it == '(' }
+                ']' -> s.count { it == ']' } > s.count { it == '[' }
+                '}' -> s.count { it == '}' } > s.count { it == '{' }
+                else -> false
+            }
+            if (!strip) break
+            s = s.dropLast(1)
+        }
+        return s
     }
 
     private fun looksLikeHost(input: String): Boolean {
