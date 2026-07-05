@@ -854,6 +854,13 @@ private fun createBrowserWebView(
                 return
             }
             fullscreen.show(view, callback)
+            // Match the screen orientation to the video's shape, like Chrome:
+            // probe the video's intrinsic size (async, main thread) and lock
+            // landscape for a wide clip, portrait for a tall one. lockOrientation
+            // no-ops if fullscreen was already left by the time the result lands.
+            this@apply.evaluateJavascript(VIDEO_DIMENSIONS_JS) { result ->
+                fullscreen.lockOrientation(isPortraitVideo(result))
+            }
         }
 
         // The page left fullscreen (its own control, or JS exiting the

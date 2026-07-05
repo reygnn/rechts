@@ -17,11 +17,15 @@ import androidx.core.view.WindowInsetsControllerCompat
  *
  * The platform hands `WebChromeClient.onShowCustomView` a ready-made view; our
  * job is to display it edge-to-edge over the whole activity, hide the system
- * bars, and rotate to landscape so the video fills the screen (like Chrome),
- * then tear it all down and restore the prior orientation on exit. The custom
- * view is added straight to the window's [Activity.getWindow]`.decorView`, so it
- * naturally covers the Compose chrome (address bar) underneath — no Compose
- * visibility state to toggle.
+ * bars, and rotate the screen to match the video's shape (landscape for a wide
+ * clip, portrait for a tall one, like Chrome), then tear it all down and restore
+ * the prior orientation on exit. The custom view is added straight to the
+ * window's [Activity.getWindow]`.decorView`, so it naturally covers the Compose
+ * chrome (address bar) underneath — no Compose visibility state to toggle.
+ *
+ * The video's aspect ratio isn't known synchronously, so [show] leaves the
+ * orientation alone and the caller locks it via [lockOrientation] once an async
+ * JS probe ([VIDEO_DIMENSIONS_JS] / [isPortraitVideo]) has read the dimensions.
  *
  * Only one fullscreen view exists at a time: a second [show] dismisses the
  * previous one first (notifying its page) before taking over.
@@ -56,18 +60,16 @@ class FullscreenVideoController(
     fun show(view: View, cb: WebChromeClient.CustomViewCallback) {
         val firstEntry = customView == null
         if (customView != null) hide()
-        // Capture the app's orientation once, before forcing landscape, so a
-        // degenerate second show() (customView already set) doesn't overwrite the
-        // real pre-fullscreen value with the landscape we just imposed.
+        // Capture the app's orientation once, before we lock it to the video's
+        // shape, so a degenerate second show() (customView already set) doesn't
+        // overwrite the real pre-fullscreen value with a lock we just imposed.
         if (firstEntry) previousOrientation = activity.requestedOrientation
         customView = view
         callback = cb
-        // Fill the screen like a video player: rotate to landscape so a landscape
-        // clip isn't letterboxed in portrait (matches Chrome). SENSOR_LANDSCAPE
-        // follows the sensor between the two landscape orientations. Restored to
-        // the app's default in hide(). The black background below still backstops
-        // a portrait clip (pillarboxed here) and the rotation transition.
-        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // Orientation is set later, once the video's aspect ratio is known — see
+        // lockOrientation(), called from onShowCustomView after an async JS probe.
+        // Until then the current orientation stays: a landscape clip watched in
+        // portrait rotates a frame later, a portrait clip never rotates at all.
         // Hide the whole page content behind the fullscreen view so nothing bleeds
         // through any transparent region of the platform view — a video SurfaceView
         // punches its own surface, and letterbox / rounded corners can otherwise
@@ -105,6 +107,22 @@ class FullscreenVideoController(
             hide(WindowInsetsCompat.Type.systemBars())
         }
         onShowingChanged(true)
+    }
+
+    /**
+     * Locks the screen to the fullscreen video's shape — landscape for a wide
+     * clip (fills the screen like Chrome), [SCREEN_ORIENTATION_SENSOR_PORTRAIT]
+     * for a tall one (no sideways pillarboxing). Called once the aspect ratio is
+     * known, which is async, so it no-ops when the user already left fullscreen
+     * by the time the probe returns. [hide] restores the pre-fullscreen value.
+     */
+    fun lockOrientation(portrait: Boolean) {
+        if (customView == null) return
+        activity.requestedOrientation = if (portrait) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
     }
 
     /**
@@ -147,4 +165,33 @@ class FullscreenVideoController(
 
     private fun insetsController(): WindowInsetsControllerCompat =
         WindowCompat.getInsetsController(activity.window, activity.window.decorView)
+}
+
+/**
+ * JS that reads the first `<video>`'s intrinsic size as `"<w>x<h>"` (e.g.
+ * `1920x1080`), or `""` if there's no video. Fed to [isPortraitVideo]. Kept
+ * next to that function so the probe and its parser stay in sync.
+ */
+internal const val VIDEO_DIMENSIONS_JS: String =
+    "(function(){var v=document.querySelector('video');" +
+        "return v?v.videoWidth+'x'+v.videoHeight:'';})()"
+
+/**
+ * Decides whether a fullscreen video should lock to portrait, from the raw
+ * result of [VIDEO_DIMENSIONS_JS] as `evaluateJavascript` delivers it: a
+ * JSON-encoded string like `"1080x1920"` (with the quotes), or `"null"` / `""`
+ * when the value is absent. Portrait only when the height clearly exceeds the
+ * width; anything square, zero, or unparseable falls back to landscape — the
+ * sensible default for the common, wide clip. Pure, so it's JVM-unit-tested.
+ */
+internal fun isPortraitVideo(evaluateJsResult: String?): Boolean {
+    val (width, height) = evaluateJsResult
+        ?.trim()
+        ?.trim('"')
+        ?.split('x')
+        ?.takeIf { it.size == 2 }
+        ?: return false
+    val w = width.toIntOrNull() ?: return false
+    val h = height.toIntOrNull() ?: return false
+    return w > 0 && h > 0 && h > w
 }
