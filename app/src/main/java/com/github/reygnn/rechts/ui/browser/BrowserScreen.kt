@@ -1252,11 +1252,15 @@ private fun AddressField(
                 }
             }
         },
-        // Plain text keyboard, not KeyboardType.Uri: the bar doubles as a search
-        // box, and many IMEs drop the space bar in URI mode. Auto-capitalization
-        // and autocorrect are off so typed URLs aren't mangled.
+        // KeyboardType.Uri (not plain Text): flags this as a URL field so URI-aware
+        // IMEs suppress auto-capitalizing the TLD after a dot ("google.com", not
+        // "google.Com"). The old worry that URI mode drops the space bar doesn't hold
+        // for the IMEs we target — nah keeps the full space bar in URI fields, Gboard
+        // only narrows it and adds "/"/".com" — and the bar still doubles as a search
+        // box: a query with spaces stays enterable, only the IME signals "URL".
+        // Auto-capitalization and autocorrect are off so typed URLs aren't mangled.
         keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
+            keyboardType = KeyboardType.Uri,
             capitalization = KeyboardCapitalization.None,
             autoCorrectEnabled = false,
             imeAction = ImeAction.Go,
