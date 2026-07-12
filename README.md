@@ -20,7 +20,8 @@ companion is *rechts* — "right".
   (drag-and-drop) or delete entries on a dedicated favorites screen (⋮ menu).
 - Hands file downloads to Android's system download manager — it fetches to
   your public `Downloads/` folder with its own notification; there's no in-app
-  download list.
+  download list. It does ask first before re-downloading a file whose name
+  you've saved before.
 - Picks a file for a web upload form (`<input type="file">`) through the
   system file picker.
 - Plays HTML5 `<video>` fullscreen, rotating to landscape to fill the screen
@@ -64,5 +65,6 @@ not in Gradle — see `~/.claude/CLAUDE.md`.
 ## Tech
 
 Kotlin · Jetpack Compose · Material 3 · `android.webkit.WebView`. Single
-Gradle module, no DI framework, no persistence. See `CLAUDE.md` for the
-architecture and hard rules.
+Gradle module, no DI framework, minimal persistence (DataStore for the
+favorites list, SharedPreferences for the browsing mode — no Room). See
+`CLAUDE.md` for the architecture and hard rules.
