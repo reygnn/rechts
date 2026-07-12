@@ -33,11 +33,44 @@ object ExternalScheme {
     private val INTERNAL_SCHEMES = setOf("http", "https", "about")
 
     /**
-     * Actions a web page must never be able to trigger from an `intent:` URL,
-     * even with BROWSABLE — they can act without further user confirmation
-     * (placing a call). Such an action is neutralised to `ACTION_VIEW` in
-     * [buildIntent] instead of being dispatched as named. String literals for
-     * the two that have no public [Intent] constant.
+     * The denylist half of the `intent:` action policy (see [buildIntent]).
+     *
+     * rechts preserves the page-supplied action so generic app-switch intents
+     * work — the whole point of not clamping to VIEW: TWINT and any other app
+     * that resolves on its own custom action reach it. That is deliberately a
+     * **fail-open denylist, not a fail-safe allowlist**: an allowlist would have
+     * to enumerate every app-switch action anyone ever integrates (each bank's
+     * TWINT action, wallets, …) and would silently break the next one — exactly
+     * the regression that clamping to VIEW caused. So the model is "allow any
+     * action, subject to these gates", and the gates — not the action list — are
+     * what keep it safe:
+     *
+     *  1. **BROWSABLE is the real boundary.** [buildIntent] adds
+     *     `CATEGORY_BROWSABLE`, and an implicit intent from web content only
+     *     resolves to an activity that *declared* BROWSABLE — an app's explicit
+     *     opt-in to being launched from the web (the trust model Chrome uses).
+     *     Sensitive system surfaces (settings, package install, …) don't declare
+     *     BROWSABLE, so they're unreachable whatever the action.
+     *  2. **No smuggling.** [buildIntent] clears `component`/`selector` and
+     *     strips URI-grant flags, so a page can't target an internal/non-exported
+     *     activity or hand over read/write grants on top of the action.
+     *
+     * What BROWSABLE alone does *not* stop is a web-triggerable action that acts
+     * **without any further user confirmation** — in practice, auto-dialing:
+     * `ACTION_CALL` and its privileged/emergency variants place the call the
+     * moment the dialer activity starts, with no "call?" prompt. Those are the
+     * denylist, neutralised to `ACTION_VIEW`. Benign relatives stay allowed and
+     * are no worse than a plain link — `DIAL` only opens the dialer, `SENDTO`/
+     * `SEND` only open a composer; the user still presses send/call.
+     *
+     * Residual risk, accepted: a third-party app could expose a BROWSABLE
+     * activity for a custom action that does something sensitive on launch. That
+     * app opted into web-triggering, so honouring it is the app's contract —
+     * identical to every other browser. If a new no-confirmation *standard*
+     * action ever ships, add it here.
+     *
+     * String literals for the two variants with no public [Intent] constant
+     * (pinned by `ExternalSchemeDispatchTest` so a typo can't silently drop them).
      */
     private val DANGEROUS_ACTIONS = setOf(
         Intent.ACTION_CALL,
