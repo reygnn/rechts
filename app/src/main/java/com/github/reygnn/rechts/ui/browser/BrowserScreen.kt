@@ -364,7 +364,18 @@ fun BrowserScreen(
                         request.fileName,
                     )
                 }
-                if (alreadyDownloaded) pendingDownload = request else enqueueDownload(request)
+                when {
+                    // Not a known file: enqueue straight away.
+                    !alreadyDownloaded -> enqueueDownload(request)
+                    // Known file, no prompt open yet: ask before re-downloading.
+                    pendingDownload == null -> pendingDownload = request
+                    // Known file, but a prompt is already open for an earlier
+                    // one — only one dialog at a time. Enqueue this rather than
+                    // overwriting (and silently dropping) the pending request;
+                    // resuming on the single-threaded main dispatcher keeps the
+                    // check-then-set atomic, so two duplicates can't both park.
+                    else -> enqueueDownload(request)
+                }
             }
         }
     }

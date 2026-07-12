@@ -62,6 +62,25 @@ class ExternalSchemeDispatchTest {
     }
 
     @Test
+    fun `privileged and emergency call actions are also neutralised to VIEW`() {
+        // The two denylist entries with no public Intent constant are raw string
+        // literals (ExternalScheme.DANGEROUS_ACTIONS); a typo in either would
+        // silently disable that guard, so pin both here — not just ACTION_CALL.
+        for (action in listOf(
+            "android.intent.action.CALL_PRIVILEGED",
+            "android.intent.action.CALL_EMERGENCY",
+        )) {
+            val url = "intent://evil/#Intent;scheme=foo;action=$action;end"
+            assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+            assertEquals(
+                "$action must be forced to VIEW",
+                Intent.ACTION_VIEW,
+                lastLaunched()!!.action,
+            )
+        }
+    }
+
+    @Test
     fun `legitimate app-switch action is preserved`() {
         // Regression: rechts used to clamp every intent: action to VIEW, which
         // stripped TWINT's custom app-switch action and broke the browser→TWINT

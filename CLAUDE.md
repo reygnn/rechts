@@ -198,7 +198,8 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    mode switches" path; equally, don't force inbound links or crash recovery to
    the homepage.
 9. **Downloads go to the system `DownloadManager`, never an in-app downloader.**
-   rechts has no download UI: `setDownloadListener` hands the file off to the OS
+   rechts has no download UI beyond the one confirmation dialog noted below:
+   `setDownloadListener` hands the file off to the OS
    (`web/DownloadHandler`), which fetches it to public `Downloads/` with its own
    notification — no storage permission needed (DownloadManager is exempt for
    that directory). Only `http(s)` is enqueueable (`isEnqueueable`, pure +
@@ -208,7 +209,11 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    the **isolated** profile's jar (`WebViewConfig.cookieFor`), never the default
    one. Accepted privacy trade-off: a private-mode download still lands in public
    storage and rides the system DownloadManager — inherent to "download", same as
-   every browser. Don't build a custom download manager, list, or history.
+   every browser. The one bit of download UI is a confirmation dialog before
+   re-downloading a file rechts already fetched: it *reads* the system
+   DownloadManager's own history (`existingDownloadNames`, no rechts-side store)
+   and, on confirm, still just hands the file to the OS. Don't grow it into a
+   custom download manager, list, or history.
 10. **File upload uses the system picker, nothing custom.** An `<input
     type="file">` triggers `WebChromeClient.onShowFileChooser`, which hands the
     platform-built chooser intent (`FileChooserParams.createIntent()` — it
