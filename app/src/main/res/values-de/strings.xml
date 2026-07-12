@@ -41,7 +41,7 @@
     <!-- Prompt before re-downloading a file rechts has downloaded before.
          %1$s is the file name. -->
     <string name="download_exists_title">Erneut herunterladen?</string>
-    <string name="download_exists_message">„%1$s“ wurde bereits heruntergeladen. Erneut herunterladen?</string>
+    <string name="download_exists_message">Eine Datei namens „%1$s“ wurde bereits heruntergeladen. Erneut herunterladen?</string>
     <string name="download_exists_confirm">Herunterladen</string>
     <string name="download_exists_dismiss">Abbrechen</string>
 

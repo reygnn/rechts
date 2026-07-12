@@ -43,7 +43,7 @@
     <!-- Prompt before re-downloading a file rechts has downloaded before.
          %1$s is the file name. -->
     <string name="download_exists_title">Download again?</string>
-    <string name="download_exists_message">You already downloaded “%1$s”. Download it again?</string>
+    <string name="download_exists_message">A file named “%1$s” was already downloaded. Download it again?</string>
     <string name="download_exists_confirm">Download</string>
     <string name="download_exists_dismiss">Cancel</string>
 
