@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -69,6 +70,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.surfaceColorAtElevation
@@ -123,7 +125,9 @@ import com.github.reygnn.rechts.web.DownloadHandler
 import com.github.reygnn.rechts.web.ExternalScheme
 import com.github.reygnn.rechts.web.PopupCaptureClient
 import com.github.reygnn.rechts.web.WebViewConfig
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val TAG = "BrowserScreen"
 
@@ -316,6 +320,55 @@ fun BrowserScreen(
         }
     }
 
+    // Download flow. The WebView's download listener hands a request here; we
+    // check rechts' own DownloadManager history off the main thread and either
+    // enqueue it straight away or park it for a confirmation dialog when a file
+    // of the same name was downloaded before. pendingDownload is plain remember,
+    // like pendingFileChooser: a prompt needn't survive process death — a lost
+    // one just means no download happened and the user re-triggers it.
+    val downloadScope = rememberCoroutineScope()
+    var pendingDownload by remember { mutableStateOf<DownloadRequest?>(null) }
+    // Throttle the download notices so a page auto-firing downloads in a loop
+    // can't flood the screen with toasts (moved here from the WebView factory so
+    // the enqueue and its notice live together).
+    val downloadNoticeGate = remember { MinIntervalGate(NOTICE_TOAST_MIN_INTERVAL_MS) }
+    fun enqueueDownload(request: DownloadRequest) {
+        val noticeRes = when (
+            DownloadHandler.enqueue(
+                context,
+                request.url,
+                request.userAgent,
+                request.contentDisposition,
+                request.mimeType,
+                request.cookie,
+            )
+        ) {
+            DownloadHandler.Outcome.STARTED -> R.string.download_started
+            DownloadHandler.Outcome.UNSUPPORTED -> R.string.download_unsupported
+            DownloadHandler.Outcome.FAILED -> R.string.download_failed
+        }
+        if (downloadNoticeGate.accept(SystemClock.uptimeMillis())) {
+            Toast.makeText(context, noticeRes, Toast.LENGTH_SHORT).show()
+        }
+    }
+    val requestDownload: (DownloadRequest) -> Unit = { request ->
+        // Only a fetchable http(s) download can already be in the history; a
+        // blob:/data: one goes straight through to its "unsupported" notice.
+        if (!DownloadHandler.isEnqueueable(request.url)) {
+            enqueueDownload(request)
+        } else {
+            downloadScope.launch {
+                val alreadyDownloaded = withContext(Dispatchers.IO) {
+                    DownloadHandler.isDuplicate(
+                        DownloadHandler.existingDownloadNames(context),
+                        request.fileName,
+                    )
+                }
+                if (alreadyDownloaded) pendingDownload = request else enqueueDownload(request)
+            }
+        }
+    }
+
     // HTML5 fullscreen video: the WebChromeClient hands the platform-built
     // fullscreen view to this controller, which hosts it over the whole activity
     // (decorView) and hides the system bars. Tied to the Activity's window;
@@ -334,6 +387,7 @@ fun BrowserScreen(
     val webView = remember(isPrivate, webViewEpoch) {
         createBrowserWebView(
             context, viewModel, isPrivate, captureWebViews, launchFilePicker, fullscreenController,
+            requestDownload,
         ) {
             // Reopen the page only while we're not in a crash loop; once the
             // gate trips, drop the crashing URL and let the first-load effect
@@ -732,8 +786,48 @@ fun BrowserScreen(
                 onClose = { showFavorites = false },
             )
         }
+
+        // Confirm before re-downloading a file rechts already has: requestDownload
+        // parked it here after finding a same-named entry in the download history.
+        pendingDownload?.let { request ->
+            AlertDialog(
+                onDismissRequest = { pendingDownload = null },
+                title = { Text(stringResource(R.string.download_exists_title)) },
+                text = { Text(stringResource(R.string.download_exists_message, request.fileName)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            pendingDownload = null
+                            enqueueDownload(request)
+                        },
+                    ) { Text(stringResource(R.string.download_exists_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingDownload = null }) {
+                        Text(stringResource(R.string.download_exists_dismiss))
+                    }
+                },
+            )
+        }
     }
 }
+
+/**
+ * A download the WebView signalled, captured from `setDownloadListener` with the
+ * page session already resolved: the raw request params, the cookie of the
+ * profile the download came from (the isolated jar in private mode), and the
+ * file name it will be saved as. Snapshotting cookie + name here means a
+ * confirmed re-download uses the session of the WebView that started it, not
+ * whatever mode happens to be active when the user answers the dialog.
+ */
+private data class DownloadRequest(
+    val url: String,
+    val userAgent: String?,
+    val contentDisposition: String?,
+    val mimeType: String?,
+    val cookie: String?,
+    val fileName: String,
+)
 
 private fun createBrowserWebView(
     context: Context,
@@ -742,18 +836,9 @@ private fun createBrowserWebView(
     captureWebViews: MutableSet<WebView>,
     launchFilePicker: (ValueCallback<Array<Uri>>, Intent) -> Unit,
     fullscreen: FullscreenVideoController?,
+    requestDownload: (DownloadRequest) -> Unit,
     onRenderGone: () -> Unit,
 ): WebView {
-    // Cheap throttle on the download "unsupported" notice so a hostile page that
-    // auto-fires a non-fetchable download in a loop can't flood the screen with
-    // toasts. (The file-upload notice fires only on the rare no-picker-app case,
-    // which a page can't spam, so it doesn't need gating.)
-    val noticeGate = MinIntervalGate(NOTICE_TOAST_MIN_INTERVAL_MS)
-    fun showNotice(ctx: Context, messageRes: Int) {
-        if (!noticeGate.accept(SystemClock.uptimeMillis())) return
-        Toast.makeText(ctx, messageRes, Toast.LENGTH_SHORT).show()
-    }
-
     return WebView(context).apply {
     layoutParams = ViewGroup.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -947,15 +1032,15 @@ private fun createBrowserWebView(
     // http(s) download the platform refused gets a distinct "failed" notice, and
     // neither fails silently.
     setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+        // Snapshot the page session (the isolated profile's jar in private mode)
+        // and the file name now, then hand the request up: the composable checks
+        // rechts' own download history and either enqueues it straight away or
+        // asks before re-downloading a file of the same name.
         val cookie = WebViewConfig.cookieFor(url, privateMode)
-        val noticeRes = when (
-            DownloadHandler.enqueue(context, url, userAgent, contentDisposition, mimeType, cookie)
-        ) {
-            DownloadHandler.Outcome.STARTED -> R.string.download_started
-            DownloadHandler.Outcome.UNSUPPORTED -> R.string.download_unsupported
-            DownloadHandler.Outcome.FAILED -> R.string.download_failed
-        }
-        showNotice(context, noticeRes)
+        val fileName = DownloadHandler.guessFileName(url, contentDisposition, mimeType)
+        requestDownload(
+            DownloadRequest(url, userAgent, contentDisposition, mimeType, cookie, fileName),
+        )
     }
 
     // Bind the profile (private vs default) BEFORE the WebView loads anything.

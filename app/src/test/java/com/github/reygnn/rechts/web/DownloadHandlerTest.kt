@@ -5,11 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Only [DownloadHandler.isEnqueueable] is unit-tested: it is pure string logic
- * deciding whether a download URL can go to the system DownloadManager (http(s))
- * or must fall back to the "unsupported" notice (blob:/data:/…).
- * [DownloadHandler.enqueue] needs the Android runtime (DownloadManager, URLUtil)
- * and is left to manual/instrumented verification, like the rest of `web/`.
+ * The pure decisions in [DownloadHandler] are unit-tested: [isEnqueueable]
+ * (whether a URL can go to the system DownloadManager at all) and [isDuplicate]
+ * (whether a file of that name was downloaded before). [enqueue],
+ * [guessFileName] and [existingDownloadNames] need the Android runtime
+ * (DownloadManager, URLUtil) and are left to manual/instrumented verification,
+ * like the rest of `web/`.
  */
 class DownloadHandlerTest {
 
@@ -43,5 +44,22 @@ class DownloadHandlerTest {
     fun `missing scheme is not enqueueable`() {
         assertFalse(DownloadHandler.isEnqueueable("example.com/file.zip"))
         assertFalse(DownloadHandler.isEnqueueable(""))
+    }
+
+    @Test
+    fun `isDuplicate matches an existing download name exactly`() {
+        val existing = setOf("report.pdf", "photo.jpg")
+        assertTrue(DownloadHandler.isDuplicate(existing, "report.pdf"))
+        assertTrue(DownloadHandler.isDuplicate(existing, "photo.jpg"))
+    }
+
+    @Test
+    fun `isDuplicate is exact and case-sensitive, and empty history never matches`() {
+        val existing = setOf("report.pdf")
+        // A different name, or a case variant, is not the same saved file.
+        assertFalse(DownloadHandler.isDuplicate(existing, "other.zip"))
+        assertFalse(DownloadHandler.isDuplicate(existing, "Report.pdf"))
+        // No prior downloads → nothing is ever a duplicate (dialog never shows).
+        assertFalse(DownloadHandler.isDuplicate(emptySet(), "report.pdf"))
     }
 }

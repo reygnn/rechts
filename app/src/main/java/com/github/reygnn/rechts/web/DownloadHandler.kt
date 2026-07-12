@@ -74,7 +74,7 @@ object DownloadHandler {
         if (!isEnqueueable(url)) return Outcome.UNSUPPORTED
         val downloadManager =
             context.getSystemService(DownloadManager::class.java) ?: return Outcome.FAILED
-        val fileName = URLUtil.guessFileName(url, contentDisposition, mimeType)
+        val fileName = guessFileName(url, contentDisposition, mimeType)
         return try {
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setMimeType(mimeType)
@@ -99,4 +99,56 @@ object DownloadHandler {
             Outcome.FAILED
         }
     }
+
+    /**
+     * The file name the system download will be saved under, from the same
+     * [URLUtil.guessFileName] [enqueue] uses. Exposed so the duplicate check and
+     * the "already downloaded" prompt name the file exactly as it will be
+     * written (and matched against the download history, which stores it as the
+     * request title).
+     */
+    fun guessFileName(url: String, contentDisposition: String?, mimeType: String?): String =
+        URLUtil.guessFileName(url, contentDisposition, mimeType)
+
+    /**
+     * File names of the app's own previously-completed downloads, read from the
+     * system [DownloadManager] (which stores each as the request title — see
+     * `setTitle` in [enqueue]). Used to warn before re-downloading a file rechts
+     * already fetched.
+     *
+     * Permission-free by design: [DownloadManager] only ever exposes the calling
+     * app's own downloads, so this is scoped to rechts' history. Two honest
+     * limitations follow — it can't see files other apps placed in `Downloads/`,
+     * and a file the user has since deleted still lingers as a history row — so
+     * treat a hit as "rechts downloaded this name before", not "the file is on
+     * disk right now". Never throws: a failed query yields an empty set (→ no
+     * prompt, download proceeds) rather than blocking the download.
+     */
+    fun existingDownloadNames(context: Context): Set<String> {
+        val downloadManager =
+            context.getSystemService(DownloadManager::class.java) ?: return emptySet()
+        val query = DownloadManager.Query().setFilterByStatus(DownloadManager.STATUS_SUCCESSFUL)
+        return runCatching {
+            downloadManager.query(query)?.use { cursor ->
+                val titleColumn = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
+                if (titleColumn < 0) return@use emptySet()
+                buildSet {
+                    while (cursor.moveToNext()) {
+                        cursor.getString(titleColumn)?.let { add(it) }
+                    }
+                }
+            } ?: emptySet()
+        }.getOrElse {
+            Log.w(TAG, "Could not read download history", it)
+            emptySet()
+        }
+    }
+
+    /**
+     * Whether [fileName] matches one of [existingNames] — i.e. rechts has already
+     * downloaded a file of that exact name. Pure, so the duplicate decision is
+     * JVM-tested; the caller reads [existingNames] from [existingDownloadNames].
+     */
+    fun isDuplicate(existingNames: Set<String>, fileName: String): Boolean =
+        fileName in existingNames
 }

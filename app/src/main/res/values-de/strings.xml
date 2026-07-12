@@ -38,6 +38,13 @@
     <!-- A valid http(s) download the platform refused (not a scheme problem) -->
     <string name="download_failed">Download fehlgeschlagen</string>
 
+    <!-- Prompt before re-downloading a file rechts has downloaded before.
+         %1$s is the file name. -->
+    <string name="download_exists_title">Erneut herunterladen?</string>
+    <string name="download_exists_message">„%1$s“ wurde bereits heruntergeladen. Erneut herunterladen?</string>
+    <string name="download_exists_confirm">Herunterladen</string>
+    <string name="download_exists_dismiss">Abbrechen</string>
+
     <!-- Out-of-scope actions (feedback instead of silently doing nothing) -->
     <string name="download_unsupported">Dieser Download wird nicht unterstützt</string>
     <string name="file_upload_unsupported">Datei-Upload wird nicht unterstützt</string>
