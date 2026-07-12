@@ -32,6 +32,19 @@ object ExternalScheme {
     /** Schemes the WebView loads on its own; everything else is external. */
     private val INTERNAL_SCHEMES = setOf("http", "https", "about")
 
+    /**
+     * Actions a web page must never be able to trigger from an `intent:` URL,
+     * even with BROWSABLE — they can act without further user confirmation
+     * (placing a call). Such an action is neutralised to `ACTION_VIEW` in
+     * [buildIntent] instead of being dispatched as named. String literals for
+     * the two that have no public [Intent] constant.
+     */
+    private val DANGEROUS_ACTIONS = setOf(
+        Intent.ACTION_CALL,
+        "android.intent.action.CALL_PRIVILEGED",
+        "android.intent.action.CALL_EMERGENCY",
+    )
+
     /** Whether [url] is something the WebView itself should load. */
     fun isInternal(url: String): Boolean = schemeOf(url) in INTERNAL_SCHEMES
 
@@ -114,20 +127,28 @@ object ExternalScheme {
     }
 
     private fun buildIntent(url: String, fromWebContent: Boolean): Intent {
-        // `intent:` URLs carry a full intent description; parse it, but force the
-        // action to VIEW, strip the component/selector so a hostile page can't
-        // target an internal, non-exported activity, and require BROWSABLE so
-        // only intents meant to be triggered from web content are honoured.
+        // `intent:` URLs carry a full intent description; parse it, but strip the
+        // component/selector so a hostile page can't target an internal,
+        // non-exported activity, require BROWSABLE so only intents meant to be
+        // triggered from web content are honoured, and neutralise a dangerous or
+        // missing action to VIEW.
         val intent = if (url.startsWith("intent:", ignoreCase = true)) {
             Intent.parseUri(url, Intent.URI_INTENT_SCHEME).apply {
-                // Clamp the action: web content may only ever launch a VIEW
-                // intent, never a sensitive action (CALL, CALL_PRIVILEGED,
-                // SENDTO, …) smuggled into the intent: string. BROWSABLE already
-                // requires a web-triggerable target; this makes the action itself
-                // non-negotiable. Trade-off: an exotic app deep link that relies
-                // on a non-VIEW action won't resolve — acceptable for a minimal
-                // browser, the safe default beats the rare convenience.
-                action = Intent.ACTION_VIEW
+                // Keep the page-supplied action so a legitimate app-switch intent
+                // reaches its app — e.g. TWINT's custom `ch.twint.action.
+                // TWINT_PAYMENT`, which its LaunchSwitcherActivity matches on and
+                // which forcing VIEW would strip, breaking the browser→TWINT
+                // hand-off. BROWSABLE (added below) is the real gate: an activity
+                // only receives a web-triggered intent if it declared it, and
+                // sensitive system actions (CALL, …) live on non-BROWSABLE
+                // activities — so requiring BROWSABLE, not clamping every action
+                // to VIEW, is what keeps this safe. Belt-and-suspenders, a small
+                // denylist of actions that can act without further confirmation
+                // (auto-dial) is still forced to VIEW; a missing action likewise
+                // (a bare `intent:` is a plain view of its data).
+                if (action.isNullOrEmpty() || action in DANGEROUS_ACTIONS) {
+                    action = Intent.ACTION_VIEW
+                }
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 component = null
                 selector = null

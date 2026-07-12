@@ -49,16 +49,50 @@ class ExternalSchemeDispatchTest {
     }
 
     @Test
-    fun `intent url action is clamped to VIEW`() {
-        // A hostile intent: that names a sensitive action must be neutralised:
-        // web content may only ever trigger an ACTION_VIEW launch.
+    fun `dangerous intent action is neutralised to VIEW`() {
+        // A hostile intent: that names an action able to act without further
+        // confirmation (auto-dial) must be neutralised — even with BROWSABLE.
         val url = "intent://evil/#Intent;scheme=foo;" +
             "action=android.intent.action.CALL;end"
         assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
 
         val launched = lastLaunched()!!
-        assertEquals("action must be forced to VIEW", Intent.ACTION_VIEW, launched.action)
+        assertEquals("dangerous action must be forced to VIEW", Intent.ACTION_VIEW, launched.action)
         assertTrue("BROWSABLE must still be present", launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+    }
+
+    @Test
+    fun `legitimate app-switch action is preserved`() {
+        // Regression: rechts used to clamp every intent: action to VIEW, which
+        // stripped TWINT's custom app-switch action and broke the browser→TWINT
+        // hand-off once rechts was the default browser. A non-dangerous action
+        // must survive so its app's (BROWSABLE) activity can match on it — while
+        // the component/selector are still cleared and BROWSABLE still required.
+        val url = "intent://payment/#Intent;scheme=twint;" +
+            "action=ch.twint.action.TWINT_PAYMENT;" +
+            "component=com.victim/.SecretActivity;end"
+        assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+
+        val launched = lastLaunched()!!
+        assertEquals(
+            "custom app-switch action must be preserved",
+            "ch.twint.action.TWINT_PAYMENT",
+            launched.action,
+        )
+        assertNull("component must still be cleared", launched.component)
+        assertNull("selector must still be cleared", launched.selector)
+        assertTrue("BROWSABLE must still be present", launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+    }
+
+    @Test
+    fun `intent url with no action defaults to VIEW`() {
+        // A bare intent: (no action=) is a plain view of its data, not a
+        // null-action dispatch that would resolve unpredictably.
+        val url = "intent://host/path#Intent;scheme=https;end"
+        assertTrue(ExternalScheme.dispatch(app, url, fromWebContent = true))
+
+        val launched = lastLaunched()!!
+        assertEquals("absent action must default to VIEW", Intent.ACTION_VIEW, launched.action)
     }
 
     @Test
