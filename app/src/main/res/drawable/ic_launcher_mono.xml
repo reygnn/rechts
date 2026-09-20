@@ -15,7 +15,7 @@
 
     <path
         android:fillColor="#FFFFFF"
-        android:fillType="evenodd"
+        android:fillType="evenOdd"
         android:pathData="M37,32 Q37,28 41,28 L61,28 L71,38 L71,76 Q71,80 67,80 L41,80 Q37,80 37,76 Z
                           M61,28 L71,38 L61,38 Z
                           M43,44 L65,44 L65,47 L43,47 Z
