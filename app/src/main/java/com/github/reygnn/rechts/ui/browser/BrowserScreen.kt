@@ -1,5 +1,6 @@
 package com.github.reygnn.rechts.ui.browser
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.role.RoleManager
 import android.content.ActivityNotFoundException
@@ -841,6 +842,10 @@ private data class DownloadRequest(
     val fileName: String,
 )
 
+// False positive: androidx.webkit's detector flags every WebViewClient()
+// constructor call, including the anonymous subclass's super call below, which
+// does override onRenderProcessGone.
+@SuppressLint("MissingOnRenderProcessGone")
 private fun createBrowserWebView(
     context: Context,
     viewModel: BrowserViewModel,

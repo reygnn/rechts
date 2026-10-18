@@ -143,4 +143,21 @@ class PopupCaptureClientTest {
         assertEquals("routed exactly once", listOf("https://target.test/"), routed)
         assertEquals("torn down exactly once", 1, tornDown)
     }
+
+    // ── renderer death ────────────────────────────────────────────────────
+
+    @Test
+    fun `renderer death is handled and drops the pending capture`() {
+        val client = newClient()
+
+        val handled = client.onRenderProcessGone(anyWebView, mockk(relaxed = true))
+
+        assertTrue("must be handled, or the platform kills the app", handled)
+        runPosted()
+        assertEquals(1, tornDown)
+        // A late intercept from the dead view must not route anything.
+        client.shouldInterceptRequest(anyWebView, request("https://target.test/"))
+        runPosted()
+        assertTrue(routed.isEmpty())
+    }
 }

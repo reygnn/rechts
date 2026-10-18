@@ -1,5 +1,7 @@
 package com.github.reygnn.rechts.web
 
+import android.annotation.SuppressLint
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -49,6 +51,9 @@ import java.io.ByteArrayInputStream
  * there keeps the two paths idempotent — whichever fires first wins, the other
  * no-ops.
  */
+// False positive: androidx.webkit's detector flags the WebViewClient() super
+// call even though onRenderProcessGone is overridden below.
+@SuppressLint("MissingOnRenderProcessGone")
 class PopupCaptureClient(
     private val routeTarget: (String) -> Unit,
     private val tearDown: () -> Unit,
@@ -90,6 +95,18 @@ class PopupCaptureClient(
             "utf-8",
             ByteArrayInputStream(ByteArray(0)),
         )
+    }
+
+    /**
+     * The capture view shares the renderer with the main view. If it dies while
+     * a capture is pending, returning the default `false` would let the platform
+     * kill the whole app — even though the main view recovers on its own. Drop
+     * the pending capture and tear the dead view down instead.
+     */
+    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+        captured = true
+        postToMainThread(Runnable { tearDown() })
+        return true
     }
 
     private companion object {

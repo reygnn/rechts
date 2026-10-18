@@ -14,7 +14,7 @@ kotlin              = "2.3.21"
 coreKtx             = "1.18.0"
 lifecycleRuntimeKtx = "2.10.0"
 activityCompose     = "1.13.0"
-composeBom          = "2026.05.01"
+composeBom          = "2026.09.00"
 
 # androidx.webkit — Profile API for optional, isolated private browsing
 # (MULTI_PROFILE since 1.10.0). Project-specific, not part of the family core.

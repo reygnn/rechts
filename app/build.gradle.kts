@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.github.reygnn.rechts"
-    compileSdk = 36
+    compileSdk = 37             // Android 17 APIs (Compose UI 1.12+); targetSdk stays 36
 
     defaultConfig {
         applicationId = "com.github.reygnn.rechts"
