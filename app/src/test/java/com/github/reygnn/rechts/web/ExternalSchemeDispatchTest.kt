@@ -152,4 +152,17 @@ class ExternalSchemeDispatchTest {
         assertEquals(Intent.ACTION_VIEW, launched.action)
         assertFalse(launched.hasCategory(Intent.CATEGORY_BROWSABLE))
     }
+
+    @Test
+    fun `dispatchToApp requires a non-browser BROWSABLE handler`() {
+        // REQUIRE_NON_BROWSER is what keeps an app-link hand-off from bouncing
+        // back to a browser (or a chooser) — rechts loads it itself instead.
+        assertTrue(ExternalScheme.dispatchToApp(app, "https://pay.google.com/gp/v/save/abc"))
+
+        val launched = lastLaunched()!!
+        assertEquals(Intent.ACTION_VIEW, launched.action)
+        assertTrue(launched.hasCategory(Intent.CATEGORY_BROWSABLE))
+        assertTrue(launched.flags and Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER != 0)
+        assertTrue(launched.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
 }

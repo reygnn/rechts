@@ -54,10 +54,14 @@ class ExternalSchemeTest {
     // ── decideWebContentNavigation ────────────────────────────────────────
 
     @Test
-    fun `internal url is loaded in the webview regardless of gesture`() {
+    fun `same-host internal url is loaded in the webview regardless of gesture`() {
         assertEquals(
             ExternalScheme.WebNavigation.LoadInWebView,
-            ExternalScheme.decideWebContentNavigation("https://example.com", gesture = true),
+            ExternalScheme.decideWebContentNavigation(
+                "https://example.com/next",
+                gesture = true,
+                currentUrl = "https://EXAMPLE.com/start",
+            ),
         )
         assertEquals(
             ExternalScheme.WebNavigation.LoadInWebView,
@@ -87,6 +91,67 @@ class ExternalSchemeTest {
         assertEquals(
             ExternalScheme.WebNavigation.Ignore,
             ExternalScheme.decideWebContentNavigation("market://details?id=x", gesture = false),
+        )
+    }
+
+    // ── app links (http(s) handed to a non-browser app) ───────────────────
+
+    @Test
+    fun `tapped link to another host is offered to an app first`() {
+        // "Add to Google Wallet" on a ticket shop must reach the Wallet app.
+        assertEquals(
+            ExternalScheme.WebNavigation.TryAppThenWebView,
+            ExternalScheme.decideWebContentNavigation(
+                "https://pay.google.com/gp/v/save/abc",
+                gesture = true,
+                currentUrl = "https://tickets.example.com/order/1",
+            ),
+        )
+    }
+
+    @Test
+    fun `tapped link with no current page is offered to an app first`() {
+        assertEquals(
+            ExternalScheme.WebNavigation.TryAppThenWebView,
+            ExternalScheme.decideWebContentNavigation("https://pay.google.com/x", gesture = true),
+        )
+    }
+
+    @Test
+    fun `cross-host navigation without a gesture stays in the webview`() {
+        // An auto-redirect must not silently fling the user into an app.
+        assertEquals(
+            ExternalScheme.WebNavigation.LoadInWebView,
+            ExternalScheme.decideWebContentNavigation(
+                "https://pay.google.com/x",
+                gesture = false,
+                currentUrl = "https://tickets.example.com/",
+            ),
+        )
+    }
+
+    @Test
+    fun `cross-host subframe navigation stays in the webview`() {
+        assertEquals(
+            ExternalScheme.WebNavigation.LoadInWebView,
+            ExternalScheme.decideWebContentNavigation(
+                "https://pay.google.com/x",
+                gesture = true,
+                isMainFrame = false,
+                currentUrl = "https://tickets.example.com/",
+            ),
+        )
+    }
+
+    @Test
+    fun `about urls are never offered to an app`() {
+        assertEquals(
+            ExternalScheme.WebNavigation.LoadInWebView,
+            ExternalScheme.decideWebContentNavigation(
+                "about:blank",
+                gesture = true,
+                currentUrl = "https://example.com/",
+            ),
         )
     }
 }

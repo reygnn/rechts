@@ -164,6 +164,12 @@ Data flow: WebView callbacks (`onPageStarted`, `onProgressChanged`, …) push
    `ACTION_VIEW` intent instead of letting the WebView error with
    `ERR_UNKNOWN_URL_SCHEME`. `intent:` URLs are hardened (component/selector
    cleared, `BROWSABLE` required) before launch.
+   **App links:** an `http(s)` link the user *taps* in the main frame that
+   leaves the current page's host is first offered to a non-browser app that
+   claims it (`ExternalScheme.dispatchToApp`, `FLAG_ACTIVITY_REQUIRE_NON_BROWSER`
+   — no chooser, no package visibility) and only loaded in the WebView if none
+   does. That's how "Add to Google Wallet" reaches Wallet. Same-host,
+   gesture-less and subframe navigations always stay in the WebView.
 7. **Default-browser eligibility is load-bearing:** the `VIEW` + `BROWSABLE` +
    `DEFAULT` (`http`/`https`) intent filter on `MainActivity` is what makes
    rechts selectable as a default browser — don't remove it. The activity is

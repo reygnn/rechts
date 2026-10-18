@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
+import java.net.URI
 
 /**
  * The lowercase scheme of [url] — the part before the first `:`, or `""` when
@@ -86,6 +87,13 @@ object ExternalScheme {
         /** http(s)/about — let the WebView load it itself. */
         LoadInWebView,
 
+        /**
+         * http(s) link tapped to another site — open it in a non-browser app
+         * that claims the URL (Google Wallet, YouTube, …) if there is one, else
+         * load it in the WebView.
+         */
+        TryAppThenWebView,
+
         /** External scheme with a user gesture — hand off to another app. */
         DispatchExternal,
 
@@ -99,11 +107,61 @@ object ExternalScheme {
      * navigation carried a user [gesture]. A gesture-less external navigation
      * (hidden iframe, auto-redirect to intent:/market:/tel:) is ignored so a
      * page can't silently fling the user into another app (matching Chrome).
+     *
+     * An `http(s)` link the user tapped in the main frame that leaves the
+     * current page's host ([currentUrl]) is offered to an app first
+     * ([WebNavigation.TryAppThenWebView]) — that's how "Add to Google Wallet"
+     * (`https://pay.google.com/…`) reaches the Wallet app, as in Chrome.
+     * Same-host navigation stays in the browser, so browsing a site whose app
+     * is installed doesn't keep jumping into that app.
      */
-    fun decideWebContentNavigation(url: String, gesture: Boolean): WebNavigation = when {
-        isInternal(url) -> WebNavigation.LoadInWebView
+    fun decideWebContentNavigation(
+        url: String,
+        gesture: Boolean,
+        isMainFrame: Boolean = true,
+        currentUrl: String? = null,
+    ): WebNavigation = when {
+        isInternal(url) -> when {
+            gesture && isMainFrame && isAppLinkCandidate(url) &&
+                !sameHost(url, currentUrl) -> WebNavigation.TryAppThenWebView
+            else -> WebNavigation.LoadInWebView
+        }
         !gesture -> WebNavigation.Ignore
         else -> WebNavigation.DispatchExternal
+    }
+
+    private fun isAppLinkCandidate(url: String): Boolean =
+        schemeOf(url) == "http" || schemeOf(url) == "https"
+
+    private fun hostOf(url: String?): String? =
+        url?.let { runCatching { URI(it).host?.lowercase() }.getOrNull() }
+
+    /** Whether [url] and [other] share a host; an unknown host never matches. */
+    private fun sameHost(url: String, other: String?): Boolean {
+        val host = hostOf(url) ?: return false
+        return host == hostOf(other)
+    }
+
+    /**
+     * Opens the `http(s)` [url] in an installed **non-browser** app that claims
+     * it (app link), returning `true` if one was launched. Returns `false` when
+     * only browsers (rechts included) handle it — the caller then loads it in
+     * the WebView. `FLAG_ACTIVITY_REQUIRE_NON_BROWSER` lets the system decide
+     * without a chooser and without rechts needing package visibility.
+     */
+    fun dispatchToApp(context: Context, url: String): Boolean {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (e: ActivityNotFoundException) {
+            false
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Could not launch app for: $url", e)
+            false
+        }
     }
 
     /**

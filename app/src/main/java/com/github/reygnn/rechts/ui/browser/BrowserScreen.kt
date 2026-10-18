@@ -864,8 +864,19 @@ private fun createBrowserWebView(
             request: WebResourceRequest,
         ): Boolean {
             val url = request.url.toString()
-            return when (ExternalScheme.decideWebContentNavigation(url, request.hasGesture())) {
+            val decision = ExternalScheme.decideWebContentNavigation(
+                url,
+                gesture = request.hasGesture(),
+                isMainFrame = request.isForMainFrame,
+                currentUrl = view.url,
+            )
+            return when (decision) {
                 ExternalScheme.WebNavigation.LoadInWebView -> false
+
+                // A tapped link to another site an app claims (e.g. Google
+                // Wallet's pay.google.com): open the app; otherwise load here.
+                ExternalScheme.WebNavigation.TryAppThenWebView ->
+                    ExternalScheme.dispatchToApp(view.context, url)
 
                 // Gesture-less external navigation: swallow it and stay put.
                 ExternalScheme.WebNavigation.Ignore -> {
