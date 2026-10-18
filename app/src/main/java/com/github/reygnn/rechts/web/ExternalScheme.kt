@@ -3,8 +3,8 @@ package com.github.reygnn.rechts.web
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
+import androidx.core.net.toUri
 import java.net.URI
 
 /**
@@ -150,7 +150,7 @@ object ExternalScheme {
      * without a chooser and without rechts needing package visibility.
      */
     fun dispatchToApp(context: Context, url: String): Boolean {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
             .addCategory(Intent.CATEGORY_BROWSABLE)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REQUIRE_NON_BROWSER)
         return try {
@@ -255,7 +255,7 @@ object ExternalScheme {
                     ).inv()
             }
         } else {
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            Intent(Intent.ACTION_VIEW, url.toUri()).apply {
                 if (fromWebContent) addCategory(Intent.CATEGORY_BROWSABLE)
             }
         }

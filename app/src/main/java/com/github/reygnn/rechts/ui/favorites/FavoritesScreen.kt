@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -256,9 +257,19 @@ private class FavoritesAdapter(
             return
         }
         if (suppressSubmit) return
+        // Favorites are identified by url (see Favorite); a title change is a
+        // content change of the same row.
+        val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize() = items.size
+            override fun getNewListSize() = new.size
+            override fun areItemsTheSame(oldPos: Int, newPos: Int) =
+                items[oldPos].url == new[newPos].url
+            override fun areContentsTheSame(oldPos: Int, newPos: Int) =
+                items[oldPos] == new[newPos]
+        })
         items.clear()
         items.addAll(new)
-        notifyDataSetChanged()
+        diff.dispatchUpdatesTo(this)
     }
 
     /**

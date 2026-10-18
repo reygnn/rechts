@@ -2,10 +2,10 @@ package com.github.reygnn.rechts.web
 
 import android.app.DownloadManager
 import android.content.Context
-import android.net.Uri
 import android.os.Environment
 import android.util.Log
 import android.webkit.URLUtil
+import androidx.core.net.toUri
 
 /**
  * Hands a WebView download off to the system [DownloadManager].
@@ -76,7 +76,7 @@ object DownloadHandler {
             context.getSystemService(DownloadManager::class.java) ?: return Outcome.FAILED
         val fileName = guessFileName(url, contentDisposition, mimeType)
         return try {
-            val request = DownloadManager.Request(Uri.parse(url)).apply {
+            val request = DownloadManager.Request(url.toUri()).apply {
                 setMimeType(mimeType)
                 userAgent?.let { addRequestHeader("User-Agent", it) }
                 // Carry the page's session so a download behind a login works;

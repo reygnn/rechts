@@ -644,6 +644,7 @@ fun BrowserScreen(
             context.startActivity(Intent.createChooser(send, null))
         }
     }
+    val copiedLinkLabel = stringResource(R.string.copied_link_label)
     val onCopyLink: () -> Unit = {
         val url = state.currentUrl
         if (url.isNotBlank()) {
@@ -651,7 +652,7 @@ fun BrowserScreen(
             // content is hidden, so keep the URL out of it. In private mode also
             // flag the clip sensitive so the URL stays out of the clipboard
             // preview/history. Android 13+ shows its own "copied" toast.
-            val clip = ClipData.newPlainText(context.getString(R.string.copied_link_label), url)
+            val clip = ClipData.newPlainText(copiedLinkLabel, url)
             if (isPrivate) {
                 clip.description.extras = PersistableBundle().apply {
                     putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)

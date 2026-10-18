@@ -1,6 +1,7 @@
 package com.github.reygnn.rechts.data
 
 import android.content.Context
+import androidx.core.content.edit
 
 /**
  * Tiny persistent settings holder. Only one value so far — the chosen browsing
@@ -19,7 +20,7 @@ class SettingsStore(context: Context) {
     /** Whether private (isolated, session-only) browsing is currently selected. */
     var privateMode: Boolean
         get() = prefs.getBoolean(KEY_PRIVATE_MODE, false)
-        set(value) = prefs.edit().putBoolean(KEY_PRIVATE_MODE, value).apply()
+        set(value) = prefs.edit { putBoolean(KEY_PRIVATE_MODE, value) }
 
     private companion object {
         const val PREFS_NAME = "rechts_settings"
